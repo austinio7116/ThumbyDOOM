@@ -1,0 +1,11 @@
+build/
+build_*/
+*.elf
+*.bin
+*.dis
+*.hex
+*.o
+*.obj
+*.a
+doom1.whd
+*.wad

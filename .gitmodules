@@ -1,0 +1,3 @@
+[submodule "vendor/rp2040-doom"]
+	path = vendor/rp2040-doom
+	url = https://github.com/kilograham/rp2040-doom.git
