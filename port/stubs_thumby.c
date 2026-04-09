@@ -54,8 +54,7 @@ const opl_driver_t opl_pico_driver =
  * unit defines under our flag set. */
 #include <stdint.h>
 boolean drone = false;
-int wipestate = 0;
-int pre_wipe_state = 0;
+/* wipestate, pre_wipe_state defined by pd_render.cpp */
 void I_BindInputVariables(void) { }
 void I_Tactile(int on, int off, int total) { }
 

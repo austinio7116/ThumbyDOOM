@@ -61,10 +61,10 @@ void I_Error(const char *error, ...)
 
 byte *I_ZoneBase(int *size)
 {
-    /* Allocate a zone heap from the BSS. 256 KB is plenty for the
-     * slim Doom config; we have 520 KB SRAM total. Phase 4 may need
-     * to tune this once we see actual usage. */
-    static byte zone[256 * 1024] __attribute__((aligned(4)));
+    /* 128 KB zone — pd_render's BSS already eats much of SRAM
+     * (visplanes, scanline command buffers, frame_buffer[2] alone
+     * is 107 KB). Tunable once we measure actual usage. */
+    static byte zone[128 * 1024] __attribute__((aligned(4)));
     *size = sizeof(zone);
     return zone;
 }

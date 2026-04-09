@@ -98,7 +98,8 @@ set(DOOM_PORT_SRC
     ${PORT}/i_input_thumby.c
     ${PORT}/stubs_thumby.c
     ${PORT}/w_file_thumby.c
-    ${PORT}/pd_stub_thumby.c
+    ${PORT}/thumby_hud.c
+    ${VSRC}/pd_render.cpp
     ${PORT}/doom1_whd.S
 )
 
@@ -126,6 +127,7 @@ target_include_directories(thumbydoom PRIVATE
     ${VENDOR}/textscreen
     ${VOPL}
     ${VSRC}/adpcm-xq
+    ${VSRC}/whd_gen
 )
 
 # WHD blob lives next to firmware build dir; .S includes it via .incbin
@@ -252,8 +254,20 @@ target_compile_definitions(thumbydoom PRIVATE
 
     USE_WHD=1
     NO_Z_MALLOC_USER_PTR=1
-    FIXED_SCREENWIDTH=1
+    # FIXED_SCREENWIDTH=1 disabled — that flag uses hardcoded
+    # 320-baked xtoviewangle / _distscale tables. With it off the
+    # tables are computed at boot for our actual SCREENWIDTH.
+    # Costs ~1.3 KB BSS but unlocks native 128x128 rendering.
     FLOOR_CEILING_CLIP_8BIT=1
+
+    # Native 128x128 rendering (overrides defaults in i_video.h
+    # which were patched to be #ifndef-guarded). 24-row slim HUD
+    # area at the bottom (rows 104..127); main view occupies the
+    # top 104 rows.
+    SCREENWIDTH=128
+    SCREENHEIGHT=128
+    MAIN_VIEWHEIGHT=104
+    THUMBY_NATIVE=1
     USE_MUSX=1
     MUSX_COMPRESSED=1
     NO_SCREENSHOT=1
@@ -267,10 +281,16 @@ target_compile_definitions(thumbydoom PRIVATE
     NO_IERROR=1
     NO_ZONE_DEBUG=1
 
-    # ThumbyDOOM-specific: we are not using rp2040-doom's pd_render
-    # for Phase 1 — pd_stub_thumby.c provides the symbols. We omit
-    # PICODOOM_RENDER_NEWHOPE so pd_render.cpp would be empty if it
-    # were compiled (it isn't).
+    # Enable kilograham's renderer (pd_render.cpp). Outputs into
+    # frame_buffer[2][SCREENWIDTH*MAIN_VIEWHEIGHT] as 8-bit indexed
+    # pixels; our i_video_thumby.c picks them up at FinishUpdate.
+    PICODOOM_RENDER_NEWHOPE=1
+    MERGE_DISTSCALE0_INTO_VIEWCOSSINANGLE=1
+    NO_USE_ZLIGHT=1
+    PICO_SCANVIDEO_SCANLINE_BUFFER_COUNT=4
+    PICO_SCANVIDEO_LINKED_SCANLINE_BUFFERS=1
+    PICO_SCANVIDEO_SCANLINE_RELEASE_FUNCTION=1
+    PICO_SCANVIDEO_MAX_SCANLINE_BUFFER_WORDS=164
 
     # We also haven't ported the wipe/text/SUPPORT_TEXT machinery, so:
     NO_USE_ENDDOOM=1
