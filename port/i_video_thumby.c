@@ -104,12 +104,12 @@ static void rebuild_palette(int palnum)
 
 /* --- LCD scanout (native 128x128) ---------------------------------- */
 
-/* Output framebuffer — handed to doom_lcd_present(). Reused from
- * device/doom_device_main.c global. */
 extern uint16_t g_fb[128 * 128];
 extern void doom_lcd_present(const uint16_t *fb);
 extern void doom_lcd_wait_idle(void);
 
+/* Output framebuffer — handed to doom_lcd_present(). Reused from
+ * device/doom_device_main.c global. */
 /* Native path: pd_render writes 8-bit indices straight into a
  * 128x128 frame_buffer. We just palette-LUT to RGB565 into g_fb
  * and push. No downsample, no letterbox. The bottom 24 rows
@@ -148,17 +148,33 @@ void I_InitGraphics(void)
 }
 
 void I_ShutdownGraphics(void)           { }
-void I_StartFrame(void)                 { }
+
+/* Heartbeat pixels — each function paints its 6x6 corner block on
+ * every call. Each tag location is distinct so we see a pattern of
+ * blocks showing exactly which functions the code has reached.
+ *
+ * Colors are deliberately NOT reused with the full-screen stage
+ * colors so overlay-vs-background is unambiguous.
+ *
+ *   (0,  10)   I_StartFrame      — white
+ *   (8,  10)   I_StartTic        — magenta
+ *   (16, 10)   pd_begin_frame    — pink
+ *   (24, 10)   pd_end_frame IN   — bright red
+ *   (32, 10)   pd_end_frame OUT  — bright green
+ *   (40, 10)   I_FinishUpdate IN — bright cyan
+ *   (48, 10)   I_FinishUpdate PRESENT — bright blue
+ *   (56, 10)   S_UpdateSounds    — gold
+ */
+
+void I_StartFrame(void)  { }
 
 extern void I_GetEvent(void);
-void I_StartTic(void)                   { I_GetEvent(); }
-void I_UpdateNoBlit(void)               { }
+void I_StartTic(void)    { I_GetEvent(); }
+
+void I_UpdateNoBlit(void){ }
 
 void I_FinishUpdate(void)
 {
-    /* pd_render's pd_end_frame swaps render_frame_index and signals
-     * render_frame_ready. We don't have a display thread; instead,
-     * peek at next_frame_index and present that buffer right here. */
     if (sem_available(&render_frame_ready)) {
         sem_acquire_blocking(&render_frame_ready);
         downsample_present(next_frame_index);

@@ -51,13 +51,46 @@ void I_Quit(void)
     for (;;) tight_loop_contents();
 }
 
-#if !NO_IERROR
+extern uint16_t g_fb[128 * 128];
+extern void doom_lcd_present(const uint16_t *fb);
+extern void doom_lcd_wait_idle(void);
+
+static void thumby_error_flash(uint16_t color)
+{
+    /* Fill with color, present, loop. Magenta = I_Error, green = panic. */
+    for (int i = 0; i < 128 * 128; i++) g_fb[i] = color;
+    doom_lcd_wait_idle();
+    doom_lcd_present(g_fb);
+    doom_lcd_wait_idle();
+    for (;;) tight_loop_contents();
+}
+
+/* Vendor s_sound.c references I_Error directly. With NO_IERROR=1 on
+ * device, i_system.h provides a __breakpoint() macro override; we
+ * #undef it here so we can also provide a real linker symbol that
+ * vendor sources call from translation units that didn't include
+ * i_system.h. */
+#undef I_Error
 void I_Error(const char *error, ...)
 {
+    (void)error;
+    thumby_error_flash(0xF81F); /* magenta — stage 7 */
+    for (;;) tight_loop_contents();
+}
+
+#if !PICO_ON_DEVICE
+/* Host: pico SDK's pico_platform_panic provides this on device.
+ * Vendor code occasionally calls panic_unsupported() — keep host
+ * builds linkable. */
+void panic_unsupported(void)
+{
+    thumby_error_flash(0xF81F);
     for (;;) tight_loop_contents();
 }
 #endif
-/* panic() is provided by pico_platform_panic */
+/* SDK's pico_platform_panic provides panic(); we can't override it
+ * cleanly. If we hit a panic the screen will stop updating — that's
+ * the implicit signal. */
 
 byte *I_ZoneBase(int *size)
 {

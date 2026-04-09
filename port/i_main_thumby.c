@@ -5,6 +5,7 @@
 
 #include "config.h"
 #include "doomtype.h"
+#include "pico/stdlib.h"
 
 extern void D_DoomMain(void);
 

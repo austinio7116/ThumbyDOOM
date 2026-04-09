@@ -34,8 +34,7 @@ static wad_file_t *W_Thumby_OpenFile(const char *path)
 {
     const uint8_t *p = doom1_whd_data;
     if (p[0] != 'I' || p[1] != 'W' || p[2] != 'H' || p[3] != 'D') {
-        I_Error("WHD blob missing — bad magic %02x%02x%02x%02x\n",
-                p[0], p[1], p[2], p[3]);
+        I_Error("WHD blob missing — bad magic");
     }
     return (wad_file_t *)&thumby_wad;
 }
