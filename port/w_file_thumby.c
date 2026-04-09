@@ -17,6 +17,7 @@
 #include "w_file.h"
 #include "z_zone.h"
 #include "w_wad.h"
+#include "i_system.h"
 
 extern const uint8_t doom1_whd_data[];
 
