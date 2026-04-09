@@ -88,16 +88,35 @@ void panic_unsupported(void)
     for (;;) tight_loop_contents();
 }
 #endif
-/* SDK's pico_platform_panic provides panic(); we can't override it
- * cleanly. If we hit a panic the screen will stop updating — that's
- * the implicit signal. */
+/* SDK's pico_platform_panic provides panic(). We use --wrap=panic
+ * at link time so we can intercept it visually. With this in place,
+ * any panic (including Z_Malloc out-of-memory in DOOM_TINY mode)
+ * paints the screen magenta instead of silently hanging. */
+__attribute__((noreturn))
+void __wrap_panic(const char *fmt, ...)
+{
+    (void)fmt;
+    thumby_error_flash(0xF81F); /* magenta */
+    for (;;) tight_loop_contents();
+}
+__attribute__((noreturn))
+void __wrap_panic_unsupported(void)
+{
+    thumby_error_flash(0xFD20); /* orange — distinct from panic */
+    for (;;) tight_loop_contents();
+}
 
 byte *I_ZoneBase(int *size)
 {
-    /* 128 KB zone — pd_render's BSS already eats much of SRAM
-     * (visplanes, scanline command buffers, frame_buffer[2] alone
-     * is 107 KB). Tunable once we measure actual usage. */
-    static byte zone[128 * 1024] __attribute__((aligned(4)));
+    /* 192 KB zone — bumped from 128 KB to test the OOM hypothesis.
+     * With native 128x128 the renderer's BSS dropped substantially
+     * so we have headroom. RP2350 has 520 KB SRAM total; current
+     * BSS without zone is roughly:
+     *   pd_render statics + frame_buffer[2][128*128]   ~80 KB
+     *   Doom statics + game_pico static state          ~100 KB
+     * → ~180 KB BSS without zone, leaving ~340 KB. 192 KB zone
+     * still leaves ~148 KB for stack + libc heap + late mallocs. */
+    static byte zone[192 * 1024] __attribute__((aligned(4)));
     *size = sizeof(zone);
     return zone;
 }

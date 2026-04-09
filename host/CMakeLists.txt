@@ -195,6 +195,7 @@ target_compile_definitions(thumbydoom_host PRIVATE
     NO_DEMO_RECORDING=1
     PICO_NO_TIMING_DEMO=1
     NO_USE_EXIT=1
+    NO_USE_STATE_MISC=1
 
     # --- doom_tiny ---
     DOOM_TINY=1

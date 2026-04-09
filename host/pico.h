@@ -30,7 +30,12 @@ extern "C" {
 #endif
 static inline int get_core_num(void) { return 0; }
 static inline int __mul_instruction(int a, int b) { return a * b; }
-__attribute__((noreturn)) static inline void panic(const char *fmt, ...) { (void)fmt; for (;;); }
+#include <stdio.h>
+__attribute__((noreturn)) static inline void panic(const char *fmt, ...) {
+    fprintf(stderr, "*** PANIC: %s\n", fmt ? fmt : "(no msg)");
+    fflush(stderr);
+    __builtin_trap();
+}
 typedef int spin_lock_t;
 static inline spin_lock_t *spin_lock_instance(int n) { (void)n; static spin_lock_t s = 0; return &s; }
 static inline uint32_t spin_lock_blocking(spin_lock_t *l) { (void)l; return 0; }

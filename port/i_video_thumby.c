@@ -108,6 +108,7 @@ extern uint16_t g_fb[128 * 128];
 extern void doom_lcd_present(const uint16_t *fb);
 extern void doom_lcd_wait_idle(void);
 
+
 /* Output framebuffer — handed to doom_lcd_present(). Reused from
  * device/doom_device_main.c global. */
 /* Native path: pd_render writes 8-bit indices straight into a
@@ -142,7 +143,6 @@ void I_InitGraphics(void)
 {
     sem_init(&render_frame_ready, 0, 2);
     sem_init(&display_frame_freed, 1, 2);
-    /* Initialize the renderer. */
     extern void pd_init(void);
     pd_init();
 }

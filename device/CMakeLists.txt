@@ -226,6 +226,11 @@ target_compile_definitions(thumbydoom PRIVATE
     NO_DEMO_RECORDING=1
     PICO_NO_TIMING_DEMO=1
     NO_USE_EXIT=1
+    # CRITICAL: required for DOOM_SMALL because the STATE macro only
+    # applies the int8_t xtics +1 encoding under NO_USE_STATE_MISC.
+    # Without this, state_tics() returns 0 for tics=1 states (like
+    # S_PISTOLUP) and P_SetPsprite spins forever loading any level.
+    NO_USE_STATE_MISC=1
 
     # --- doom_tiny ---
     DOOM_TINY=1
@@ -321,6 +326,14 @@ set_source_files_properties(
     ${VOPL}/emu8950.c
     ${VOPL}/opl_api.c
     PROPERTIES COMPILE_FLAGS "-fms-extensions -Wno-microsoft-anon-tag"
+)
+
+# Wrap panic so we can flash a marker on device when Z_Malloc OOM
+# triggers it. The pico-sdk's strong `panic` is intercepted at link
+# time and routed to __wrap_panic in port/i_system_thumby.c.
+target_link_options(thumbydoom PRIVATE
+    -Wl,--wrap=panic
+    -Wl,--wrap=panic_unsupported
 )
 
 target_link_libraries(thumbydoom PRIVATE
