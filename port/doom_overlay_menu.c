@@ -85,11 +85,13 @@ static int val_gamma;
 static int val_godmode;
 static int val_weapons;
 static int val_noclip;
-static int val_warp_ep = 1;
-static int val_warp_map = 1;
+static int val_warp_ep = 0;   /* 0-based index into ep_choices */
+static int val_warp_map = 0;  /* 0-based index into map_choices */
 
 static const char *ctrl_choices[] = { "CLASSIC", "SOUTHPAW" };
 static const char *gamma_choices[] = { "OFF", "1", "2", "3", "4" };
+static const char *ep_choices[] = { "1", "2", "3", "4" };
+static const char *map_choices[] = { "1","2","3","4","5","6","7","8","9" };
 
 /* --- Menu items definition --- */
 static menu_item_t items[] = {
@@ -97,16 +99,16 @@ static menu_item_t items[] = {
     { MI_SEPARATOR, NULL,           NULL,           0, 0,  NULL, 0, 0 },
     { MI_TOGGLE,    "Show FPS",     &val_show_fps,  0, 1,  NULL, 0, 0 },
     { MI_CHOICE,    "Controls",     &val_controls,  0, 1,  ctrl_choices, 2, 0 },
-    { MI_SLIDER,    "Volume",       &val_volume,    0, 10, NULL, 0, 0 },
-    { MI_SLIDER,    "Music",        &val_music,     0, 10, NULL, 0, 0 },
+    { MI_SLIDER,    "Volume",       &val_volume,    0, 20, NULL, 0, 0 },
+    { MI_SLIDER,    "Music",        &val_music,     0, 20, NULL, 0, 0 },
     { MI_CHOICE,    "Gamma",        &val_gamma,     0, 4,  gamma_choices, 5, 0 },
     { MI_SEPARATOR, NULL,           NULL,           0, 0,  NULL, 0, 0 },
     { MI_TOGGLE,    "God Mode",     &val_godmode,   0, 1,  NULL, 0, 0 },
     { MI_TOGGLE,    "All Weapons",  &val_weapons,   0, 1,  NULL, 0, 0 },
     { MI_TOGGLE,    "No Clip",      &val_noclip,    0, 1,  NULL, 0, 0 },
     { MI_SEPARATOR, NULL,           NULL,           0, 0,  NULL, 0, 0 },
-    { MI_SLIDER,    "Warp Episode", &val_warp_ep,   1, 4,  NULL, 0, 0 },
-    { MI_SLIDER,    "Warp Map",     &val_warp_map,  1, 9,  NULL, 0, 0 },
+    { MI_CHOICE,    "Warp Episode", &val_warp_ep,   0, 3,  ep_choices, 4, 0 },
+    { MI_CHOICE,    "Warp Map",     &val_warp_map,  0, 8,  map_choices, 9, 0 },
     { MI_ACTION,    "Warp Now!",    NULL,           0, 0,  NULL, 0, ACT_WARP },
 };
 #define NUM_ITEMS ((int)(sizeof(items)/sizeof(items[0])))
@@ -214,6 +216,24 @@ void overlay_menu_check(uint32_t cur, uint32_t lb_mask, uint32_t rb_mask)
             hold_start_ms = now_ms();
             hold_active = 1;
         } else if (now_ms() - hold_start_ms >= HOLD_MS) {
+            /* Release all Doom keys BEFORE opening the menu.
+             * Doom has already processed keydowns for held buttons
+             * (LB=',' RB='.' etc). These keyups are posted into the
+             * event queue and will be processed by TryRunTics on
+             * this same frame, clearing Doom's internal key state.
+             * Keep it under 8 events (MAXEVENTS with DOOM_SMALL). */
+            {
+                extern void D_PostEvent(event_t *ev);
+                static const int release_keys[] = {
+                    ',', '.', KEY_LEFTARROW, KEY_RIGHTARROW,
+                    KEY_UPARROW, KEY_DOWNARROW, KEY_RCTRL
+                };
+                for (int i = 0; i < (int)(sizeof(release_keys)/sizeof(release_keys[0])); i++) {
+                    event_t ev = { ev_keyup, release_keys[i], -1, -1 };
+                    D_PostEvent(&ev);
+                }
+            }
+
             /* Open menu */
             menu_open = 1;
             hold_active = 0;
@@ -332,17 +352,42 @@ void overlay_menu_render(void)
 #define BI_B      7
 #define BI_MENU   8
 
+/* Drain the event queue on menu close to clear any stale events
+ * accumulated during the menu session. */
+static void drain_event_queue(void) {
+    extern event_t *D_PopEvent(void);
+    while (D_PopEvent()) {}
+}
+
 void overlay_menu_input(uint32_t cur, uint32_t prev)
 {
     if (!menu_open) return;
 
-    /* Edge detection — just pressed this frame */
+    /* Edge detection + auto-repeat for d-pad navigation.
+     * First press fires immediately, then repeats every 150ms. */
     uint32_t pressed = cur & ~prev;
+    static uint32_t repeat_held;
+    static uint32_t repeat_ms;
+    uint32_t nav_mask = (1u<<BI_UP)|(1u<<BI_DOWN)|(1u<<BI_LEFT)|(1u<<BI_RIGHT);
+    if (cur & nav_mask & ~prev) {
+        /* New d-pad press — fire immediately and start repeat timer */
+        repeat_held = cur & nav_mask;
+        repeat_ms = now_ms();
+    } else if (cur & nav_mask & repeat_held) {
+        /* Still held — check repeat interval */
+        if (now_ms() - repeat_ms >= 150) {
+            pressed |= (cur & nav_mask & repeat_held);
+            repeat_ms = now_ms();
+        }
+    } else {
+        repeat_held = 0;
+    }
 
     /* Close menu */
     if ((pressed & (1u << BI_B)) || (pressed & (1u << BI_MENU))) {
         menu_open = 0;
         apply_cheats();
+        drain_event_queue();
         return;
     }
 
@@ -378,10 +423,12 @@ void overlay_menu_input(uint32_t cur, uint32_t prev)
             if (it->action_id == ACT_RESUME) {
                 menu_open = 0;
                 apply_cheats();
+                drain_event_queue();
             } else if (it->action_id == ACT_WARP) {
                 menu_open = 0;
                 apply_cheats();
-                G_DeferedInitNew(gameskill, val_warp_ep, val_warp_map, false);
+                drain_event_queue();
+                G_DeferedInitNew(gameskill, val_warp_ep + 1, val_warp_map + 1, false);
             }
         }
     }

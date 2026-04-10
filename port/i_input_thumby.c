@@ -68,16 +68,18 @@ typedef struct {
  * and the menu/intermission screens, where Doom expects ENTER for
  * confirm and 'y' for yes-prompts. The "extra" key is harmless in
  * the other context. */
-static const button_map_t btn_map[] = {
-    { BTN_LEFT_GP,  KEY_LEFTARROW,  0 },             /* turn left / menu left */
-    { BTN_RIGHT_GP, KEY_RIGHTARROW, 0 },             /* turn right / menu right */
-    { BTN_UP_GP,    KEY_UPARROW,    0 },             /* forward / menu up */
-    { BTN_DOWN_GP,  KEY_DOWNARROW,  0 },             /* back / menu down */
-    { BTN_LB_GP,    ',',            0 },             /* strafe left  */
-    { BTN_RB_GP,    '.',            0 },             /* strafe right */
-    { BTN_A_GP,     KEY_RCTRL,      KEY_ENTER },     /* fire + menu confirm */
-    { BTN_B_GP,     ' ',            'y' },           /* use + yes-confirm */
-    { BTN_MENU_GP,  KEY_ESCAPE,     0 },             /* menu / cancel */
+/* Classic: dpad=turn, LB/RB=strafe.
+ * Southpaw: dpad L/R=strafe, LB/RB=turn. */
+static button_map_t btn_map[] = {
+    { BTN_LEFT_GP,  KEY_LEFTARROW,  0 },             /* [0] turn/strafe left */
+    { BTN_RIGHT_GP, KEY_RIGHTARROW, 0 },             /* [1] turn/strafe right */
+    { BTN_UP_GP,    KEY_UPARROW,    0 },             /* [2] forward */
+    { BTN_DOWN_GP,  KEY_DOWNARROW,  0 },             /* [3] back */
+    { BTN_LB_GP,    ',',            0 },             /* [4] strafe/turn left */
+    { BTN_RB_GP,    '.',            0 },             /* [5] strafe/turn right */
+    { BTN_A_GP,     KEY_RCTRL,      KEY_ENTER },     /* [6] fire + confirm */
+    { BTN_B_GP,     ' ',            'y' },           /* [7] use + yes */
+    { BTN_MENU_GP,  KEY_ESCAPE,     0 },             /* [8] menu */
 };
 #define NBTN ((int)(sizeof(btn_map)/sizeof(btn_map[0])))
 
@@ -118,6 +120,26 @@ void I_GetEvent(void)
         binds_set = 1;
     }
 
+    /* Swap dpad/bumper keys when control scheme changes. */
+    {
+        static int last_ctrl = -1;
+        int ctrl = overlay_menu_get_controls();
+        if (ctrl != last_ctrl) {
+            if (ctrl == 0) {
+                btn_map[0].doom_key = KEY_LEFTARROW;
+                btn_map[1].doom_key = KEY_RIGHTARROW;
+                btn_map[4].doom_key = ',';
+                btn_map[5].doom_key = '.';
+            } else {
+                btn_map[0].doom_key = ',';
+                btn_map[1].doom_key = '.';
+                btn_map[4].doom_key = KEY_LEFTARROW;
+                btn_map[5].doom_key = KEY_RIGHTARROW;
+            }
+            last_ctrl = ctrl;
+        }
+    }
+
     uint32_t cur = 0;
     for (int i = 0; i < NBTN; i++) {
         /* GPIOs are pull-ups, active low. */
@@ -128,10 +150,24 @@ void I_GetEvent(void)
     overlay_menu_check(cur, 1u << LB_IDX, 1u << RB_IDX);
 
     /* While overlay menu is active, route input to menu only. */
+    static int was_in_menu;
     if (overlay_menu_active()) {
         overlay_menu_input(cur, prev_state);
         prev_state = cur;
+        was_in_menu = 1;
         return;
+    }
+    if (was_in_menu) {
+        /* After menu closes, wait until ALL buttons are released
+         * before resuming normal input. This prevents the B+trigger
+         * weapon chord from firing (B was held to close the menu)
+         * and avoids any stale key state mismatches. */
+        if (cur != 0) {
+            prev_state = cur;
+            return;
+        }
+        was_in_menu = 0;
+        prev_state = 0;
     }
 
     /* B + LB = prev weapon, B + RB = next weapon.

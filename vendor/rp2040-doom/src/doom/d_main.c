@@ -493,12 +493,20 @@ void D_RunFrame()
 
 #if THUMBY_NATIVE
     /* While overlay menu is active, skip game logic but keep
-     * polling input and rendering so the menu is interactive. */
+     * polling input and rendering so the menu is interactive.
+     * Can't use I_FinishUpdate — it gates on render_frame_ready
+     * which is only released by pd_end_frame (not called here). */
     {
         extern int overlay_menu_active(void);
+        extern void overlay_menu_render(void);
+        extern uint16_t g_fb[];
+        extern void doom_lcd_wait_idle(void);
+        extern void doom_lcd_present(const uint16_t *);
         if (overlay_menu_active()) {
             I_StartTic();
-            I_FinishUpdate();
+            overlay_menu_render();
+            doom_lcd_wait_idle();
+            doom_lcd_present(g_fb);
             return;
         }
     }

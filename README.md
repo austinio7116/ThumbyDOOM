@@ -37,7 +37,8 @@ and re-upload your games.
 | B (hold 0.4s) | Toggle automap |
 | B + LB | Previous weapon |
 | B + RB | Next weapon |
-| MENU | Open pause menu |
+| MENU | Open Doom menu |
+| LB + RB (hold 3s) | Open overlay menu |
 
 ### Tips
 
@@ -60,6 +61,29 @@ The bottom of the screen shows your health, armor, ammo, and the
 Doomguy's face (which reacts to damage direction). Key cards appear
 as colored markers when collected.
 
+### Overlay Menu
+
+Hold **LB + RB** together for 3 seconds during gameplay to open the
+overlay menu. The game pauses and a settings screen appears over the
+dimmed game view. Navigate with the **d-pad**, adjust values with
+**left/right**, toggle options with **A**, and close with **B** or
+**MENU**.
+
+| Option | Type | Description |
+|--------|------|-------------|
+| Resume | Action | Close menu and unpause |
+| Show FPS | Toggle | Display frame rate counter (top-right) |
+| Controls | Choice | CLASSIC (d-pad turns, bumpers strafe) or SOUTHPAW (d-pad strafes, bumpers turn) |
+| Volume | Slider 0-20 | Master volume (10 = default, 20 = 2x boost) |
+| Music | Slider 0-20 | Music volume relative to SFX |
+| Gamma | Choice | Brightness correction (OFF, 1-4) |
+| God Mode | Toggle | Invincibility |
+| All Weapons | Toggle | All weapons, full ammo, all keys |
+| No Clip | Toggle | Walk through walls |
+| Warp Episode | Choice 1-4 | Select episode for level warp |
+| Warp Map | Choice 1-9 | Select map for level warp |
+| Warp Now! | Action | Warp to the selected level |
+
 ## Features
 
 - Native 128x128 rendering (not a downscaled larger frame)
@@ -67,6 +91,8 @@ as colored markers when collected.
 - Classic screen melt transitions between levels
 - Save/load to flash (6 slots, persists across power cycles)
 - Correctly scaled status bar with smooth text (2x2 blend filter)
+- Overlay pause menu with cheats, settings, and level warp
+- FPS counter, gamma correction, control scheme switching
 - DOS-style boot log showing real initialization messages
 
 ## Build from Source
@@ -256,6 +282,45 @@ automatically when `D_DoomLoop` starts.
 - DWT hardware watchpoint infrastructure for memory corruption debugging
 - Blue diagnostic screen (`thumby_crash()`) callable from validation
   traps anywhere in the codebase
+
+## Changelog
+
+### v1.1
+
+- **Overlay menu**: Hold LB+RB for 3 seconds to open an in-game
+  settings overlay with FPS counter, control scheme, volume/music
+  sliders, gamma correction, cheats (god mode, all weapons, no clip),
+  and level warp
+- **Audio quality**: 16-bit ADPCM decode (was truncated to 8-bit),
+  gentler low-pass filter for crisper SFX, linear interpolation for
+  music downsampling
+- **Gamma correction**: Palette rebuild now applies the Doom gamma
+  table — 5 brightness levels (OFF, 1-4)
+- **Weapon switching**: B+LB = previous weapon, B+RB = next weapon
+- **Intermission screen**: Stats text positioned correctly using
+  320x200 overlay coordinates instead of native 128x128
+- **HUD fix**: vpatch_clip_bottom restored to 200 before overlay
+  drawing — fixes missing HUD on level 2+ and clipped intermission
+  text
+- **Control scheme**: Classic (d-pad turns) or Southpaw (d-pad
+  strafes) selectable from the overlay menu
+- **Volume control**: Master volume and music volume sliders (0-20,
+  where 10 = default, 20 = 2x boost)
+- **Build script**: `build_wad.sh` for building firmware from any
+  supported WAD (Ultimate Doom, Doom II)
+
+### v1.0
+
+- Initial release
+- Full shareware Episode 1 playable
+- Native 128x128 rendering via pd_render
+- OPL2 music + 8-channel SFX on core1
+- Classic screen melt wipe transitions
+- Save/load to flash (6 slots)
+- 16-row status bar with 2x2 blend filter
+- Automap (long-press B)
+- DOS-style boot log
+- HardFault handler for crash diagnostics
 
 ## Credits
 

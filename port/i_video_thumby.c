@@ -95,6 +95,7 @@ int current_pal = 0;
 
 #include "w_wad.h"
 #include "z_zone.h"
+#include "tables.h"
 
 static void rebuild_palette(int palnum)
 {
@@ -113,6 +114,9 @@ static void rebuild_palette(int palnum)
         sr = 0;   sg = 256; sb = 0;   shift = 1;          steps = 8;
     }
 
+    /* Gamma table: usegamma 0 = no correction, 1-4 = progressively brighter. */
+    const byte *gtable = (usegamma > 0) ? gammatable[usegamma - 1] : NULL;
+
     for (int i = 0; i < 256; i++) {
         int r = base[i*3+0];
         int g = base[i*3+1];
@@ -124,6 +128,11 @@ static void rebuild_palette(int palnum)
             if (r < 0) r = 0; else if (r > 255) r = 255;
             if (g < 0) g = 0; else if (g > 255) g = 255;
             if (b < 0) b = 0; else if (b > 255) b = 255;
+        }
+        if (gtable) {
+            r = gtable[r];
+            g = gtable[g];
+            b = gtable[b];
         }
         palette_rgb565[i] = (uint16_t)(((r & 0xf8) << 8) | ((g & 0xfc) << 3) | (b >> 3));
     }

@@ -220,6 +220,13 @@ static void mix_audio(int16_t *out, int n_samples)
             int r = r0 + ((r1 - r0) * frac >> 8);
             mix[i] = (l + r) / 2;
         }
+        /* Apply music volume from overlay menu (0-10). */
+        extern int overlay_menu_get_music(void);
+        int mvol = overlay_menu_get_music();
+        if (mvol < 10) {
+            for (int i = 0; i < n_samples; i++)
+                mix[i] = mix[i] * mvol / 10;
+        }
     } else {
         memset(mix, 0, n_samples * sizeof(int32_t));
     }
@@ -256,9 +263,11 @@ static void mix_audio(int16_t *out, int n_samples)
         }
     }
 
-    /* Clamp int32 accumulator → int16 output. */
+    /* Apply master volume (0-10) and clamp → int16 output. */
+    extern int overlay_menu_get_volume(void);
+    int vol = overlay_menu_get_volume();
     for (int i = 0; i < n_samples; i++) {
-        int32_t s = mix[i];
+        int32_t s = mix[i] * vol / 10;
         if (s > 32767)  s = 32767;
         if (s < -32768) s = -32768;
         out[i] = (int16_t)s;
