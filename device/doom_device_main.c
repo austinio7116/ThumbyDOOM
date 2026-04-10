@@ -40,6 +40,58 @@ static void boot_splash(void) {
     sleep_ms(1200);
 }
 
+/* --- HardFault handler -------------------------------------------- */
+/* Cortex-M33 pushes {R0,R1,R2,R3,R12,LR,PC,xPSR} on fault.
+ * We grab the faulting PC and paint it on the LCD so we can look
+ * it up in the .dis file without needing a debugger attached. */
+
+void __attribute__((used)) fault_screen(uint32_t pc, uint32_t lr) {
+    /* Bypass DMA — write SPI blocking so we don't depend on any
+     * state that may be corrupted. */
+    doom_lcd_wait_idle();
+
+    fb_fill(0xF800);  /* red background */
+
+    doom_font_draw_2x(g_fb, "HARDFAULT", 8, 4, 0xFFFF);
+
+    /* Print PC and LR as hex strings */
+    char buf[20];
+
+    static const char hex[] = "0123456789ABCDEF";
+    buf[0] = 'P'; buf[1] = 'C'; buf[2] = ':';
+    for (int i = 0; i < 8; i++)
+        buf[3 + i] = hex[(pc >> (28 - i * 4)) & 0xF];
+    buf[11] = 0;
+    doom_font_draw_2x(g_fb, buf, 4, 28, 0xFFFF);
+
+    buf[0] = 'L'; buf[1] = 'R'; buf[2] = ':';
+    for (int i = 0; i < 8; i++)
+        buf[3 + i] = hex[(lr >> (28 - i * 4)) & 0xF];
+    buf[11] = 0;
+    doom_font_draw_2x(g_fb, buf, 4, 48, 0xFFFF);
+
+    doom_font_draw(g_fb, "look up PC in .dis", 4, 72, 0xFFE0);
+
+    doom_lcd_present(g_fb);
+    doom_lcd_wait_idle();
+    for (;;) __asm volatile("wfi");
+}
+
+/* Naked so we can read the exception stack frame correctly.
+ * On entry, the hardware has selected MSP or PSP; we test bit 2
+ * of LR (EXC_RETURN) to determine which. */
+void __attribute__((naked)) isr_hardfault(void) {
+    __asm volatile(
+        "tst   lr, #4          \n"  /* test EXC_RETURN bit 2 */
+        "ite   eq               \n"
+        "mrseq r0, msp          \n"  /* fault used MSP */
+        "mrsne r0, psp          \n"  /* fault used PSP */
+        "ldr   r1, [r0, #20]   \n"  /* r1 = stacked LR  (offset 20) */
+        "ldr   r0, [r0, #24]   \n"  /* r0 = stacked PC  (offset 24) */
+        "b     fault_screen     \n"
+    );
+}
+
 /* Forward decl — provided by port/i_main_thumby.c which in turn
  * calls Doom's D_DoomMain(). */
 extern void thumby_doom_main(void);
