@@ -491,6 +491,19 @@ void D_RunFrame()
     // frame syncronous IO operations
     I_StartFrame ();
 
+#if THUMBY_NATIVE
+    /* While overlay menu is active, skip game logic but keep
+     * polling input and rendering so the menu is interactive. */
+    {
+        extern int overlay_menu_active(void);
+        if (overlay_menu_active()) {
+            I_StartTic();
+            I_FinishUpdate();
+            return;
+        }
+    }
+#endif
+
     TryRunTics (); // will run at least one tic
 
     S_UpdateSounds (players[consoleplayer].mo);// move positional sounds

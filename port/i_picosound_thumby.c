@@ -55,7 +55,7 @@ typedef struct channel_s {
 #if SOUND_LOW_PASS
     uint8_t alpha256;
 #endif
-    int8_t decompressed[ADPCM_SAMPLES_PER_BLOCK_SIZE];
+    int16_t decompressed[ADPCM_SAMPLES_PER_BLOCK_SIZE];
 } channel_t;
 
 static boolean sound_initialized = false;
@@ -102,12 +102,14 @@ static bool check_and_init_channel(int ch) {
 }
 
 /* ADPCM decoder — adapted from vendor */
-static int adpcm_decode_block_s8(int8_t *outbuf, const uint8_t *inbuf, int inbufsize)
+/* Decode ADPCM to full 16-bit samples (not truncated to 8-bit).
+ * Preserves the full dynamic range from the 4-bit ADPCM encoding. */
+static int adpcm_decode_block_s16(int16_t *outbuf, const uint8_t *inbuf, int inbufsize)
 {
     int samples = 1, chunks;
     if (inbufsize < 4) return 0;
     int32_t pcmdata = (int16_t)(inbuf[0] | (inbuf[1] << 8));
-    *outbuf++ = pcmdata >> 8u;
+    *outbuf++ = pcmdata;
     int index = inbuf[2];
     if (index < 0 || index > 88 || inbuf[3]) return 0;
     inbufsize -= 4;
@@ -128,7 +130,7 @@ static int adpcm_decode_block_s8(int8_t *outbuf, const uint8_t *inbuf, int inbuf
             index += index_table[nibble & 7];
             if (index < 0) index = 0;
             else if (index > 88) index = 88;
-            *outbuf++ = pcmdata >> 8u;
+            *outbuf++ = pcmdata;
 
             step = step_table[index]; delta = step >> 3;
             nibble >>= 4;
@@ -142,7 +144,7 @@ static int adpcm_decode_block_s8(int8_t *outbuf, const uint8_t *inbuf, int inbuf
             index += index_table[nibble & 7];
             if (index < 0) index = 0;
             else if (index > 88) index = 88;
-            *outbuf++ = pcmdata >> 8u;
+            *outbuf++ = pcmdata;
         }
         inbuf += 4;
     }
@@ -153,7 +155,7 @@ static void decompress_buffer(channel_t *ch) {
     int block_size = (ch->data_end - ch->data);
     if (block_size <= 0) { ch->decompressed_size = 0; return; }
     if (block_size > ADPCM_BLOCK_SIZE) block_size = ADPCM_BLOCK_SIZE;
-    ch->decompressed_size = adpcm_decode_block_s8(ch->decompressed, ch->data, block_size);
+    ch->decompressed_size = adpcm_decode_block_s16(ch->decompressed, ch->data, block_size);
     assert(ch->decompressed_size && ch->decompressed_size <= sizeof(ch->decompressed));
     ch->data += block_size;
 }
@@ -176,7 +178,10 @@ static boolean init_channel_for_sfx(channel_t *ch, const sfxinfo_t *sfxinfo, int
     decompress_buffer(ch);
     ch->offset = 0;
 #if SOUND_LOW_PASS
-    ch->alpha256 = 256u * 201u * sample_freq / (201u * sample_freq + 64u * (unsigned)PICO_SOUND_SAMPLE_FREQ);
+    /* Gentler low-pass than the original (which used 201/64 ratio,
+     * giving only ~41% new sample weight at 11025 Hz). Use 3:1 ratio
+     * for ~75% new sample → crisper SFX on the tiny speaker. */
+    ch->alpha256 = 256u * 3u * sample_freq / (3u * sample_freq + (unsigned)PICO_SOUND_SAMPLE_FREQ);
 #endif
     return true;
 }
@@ -202,23 +207,28 @@ static void mix_audio(int16_t *out, int n_samples)
         fake_audio_t fa = { .buffer = &fb, .max_sample_count = opl_n, .sample_count = 0 };
         music_generator((void *)&fa);
 
-        /* Downsample 49716→22050 via nearest-neighbor + stereo→mono. */
+        /* Downsample 49716→22050 with linear interpolation + stereo→mono.
+         * Reduces aliasing roughness vs nearest-neighbor. */
         for (int i = 0; i < n_samples; i++) {
-            int si = (i * opl_n) / n_samples;
-            if (si >= opl_n) si = opl_n - 1;
-            int l = opl_stereo[si * 2];
-            int r = opl_stereo[si * 2 + 1];
+            uint32_t pos = (uint32_t)i * opl_n * 256 / n_samples;
+            int si = pos >> 8;
+            int frac = pos & 0xFF;
+            if (si >= opl_n - 1) si = opl_n - 2;
+            int l0 = opl_stereo[si * 2],     r0 = opl_stereo[si * 2 + 1];
+            int l1 = opl_stereo[si * 2 + 2], r1 = opl_stereo[si * 2 + 3];
+            int l = l0 + ((l1 - l0) * frac >> 8);
+            int r = r0 + ((r1 - r0) * frac >> 8);
             mix[i] = (l + r) / 2;
         }
     } else {
         memset(mix, 0, n_samples * sizeof(int32_t));
     }
 
-    /* --- SFX channels (already resampled via step field) --- */
+    /* --- SFX channels (16-bit ADPCM, resampled via step field) --- */
     for (int ch = 0; ch < NUM_SOUND_CHANNELS; ch++) {
         if (!is_channel_playing(ch)) continue;
         channel_t *c = &channels[ch];
-        int vol = (c->left + c->right) / 2;
+        int vol = (c->left + c->right) / 2;  /* 0..255 */
         uint32_t offset_end = c->decompressed_size * 65536;
 #if SOUND_LOW_PASS
         int alpha256 = c->alpha256;
@@ -231,7 +241,8 @@ static void mix_audio(int16_t *out, int n_samples)
 #else
             sample = (beta256 * sample + alpha256 * c->decompressed[c->offset >> 16]) / 256;
 #endif
-            mix[s] += sample * vol;
+            /* 16-bit sample * vol / 256 → stays in int16 range */
+            mix[s] += (sample * vol) >> 8;
             c->offset += c->step;
             if (c->offset >= offset_end) {
                 c->offset -= offset_end;

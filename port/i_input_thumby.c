@@ -21,6 +21,7 @@
 #include "d_event.h"
 #include "i_input.h"
 #include "m_controls.h"
+#include "doom_overlay_menu.h"
 
 #include "pico/stdlib.h"
 #include "hardware/gpio.h"
@@ -121,6 +122,16 @@ void I_GetEvent(void)
     for (int i = 0; i < NBTN; i++) {
         /* GPIOs are pull-ups, active low. */
         if (!gpio_get(btn_map[i].gpio)) cur |= (1u << i);
+    }
+
+    /* Overlay menu: check LB+RB hold trigger. */
+    overlay_menu_check(cur, 1u << LB_IDX, 1u << RB_IDX);
+
+    /* While overlay menu is active, route input to menu only. */
+    if (overlay_menu_active()) {
+        overlay_menu_input(cur, prev_state);
+        prev_state = cur;
+        return;
     }
 
     /* B + LB = prev weapon, B + RB = next weapon.

@@ -16,6 +16,7 @@
 #include "i_video.h"
 #include "v_video.h"
 #include "m_random.h"
+#include "doom_overlay_menu.h"
 
 /* --- globals -------------------------------------------------------- */
 
@@ -89,8 +90,8 @@ volatile uint8_t interp_in_use;
  * palette 0 from the lump — for palnum > 0 we compute the shift in
  * software using the same formulas whd_gen verified against. */
 static uint16_t palette_rgb565[256];
-static int palette_dirty = 1;
-static int current_pal = 0;
+int palette_dirty = 1;
+int current_pal = 0;
 
 #include "w_wad.h"
 #include "z_zone.h"
@@ -276,6 +277,28 @@ static void present_frame(int frame)
 
     if (melt_active) {
         melt_advance_and_composite();
+    }
+
+    /* Overlay menu — renders on top of everything when active. */
+    if (overlay_menu_active()) {
+        overlay_menu_render();
+    }
+
+    /* FPS counter — top-right corner when enabled. */
+    if (overlay_menu_show_fps() && !overlay_menu_active()) {
+        extern int I_GetTime(void);
+        static int last_time, frame_count, displayed_fps;
+        frame_count++;
+        int now = I_GetTime();
+        if (now - last_time >= 35) {  /* 1 second at 35 tics/sec */
+            displayed_fps = frame_count;
+            frame_count = 0;
+            last_time = now;
+        }
+        char fpsbuf[8];
+        extern int doom_font_draw(uint16_t*, const char*, int, int, uint16_t);
+        snprintf(fpsbuf, sizeof(fpsbuf), "%d", displayed_fps);
+        doom_font_draw(g_fb, fpsbuf, 128 - doom_font_width(fpsbuf) - 1, 1, 0x07E0);
     }
 
     doom_lcd_wait_idle();

@@ -98,6 +98,7 @@ set(DOOM_PORT_SRC
     ${PORT}/i_system_thumby.c
     ${PORT}/i_timer_thumby.c
     ${PORT}/i_input_thumby.c
+    ${PORT}/doom_overlay_menu.c
     ${PORT}/stubs_thumby.c
     ${PORT}/w_file_thumby.c
     ${PORT}/thumby_hud.c
