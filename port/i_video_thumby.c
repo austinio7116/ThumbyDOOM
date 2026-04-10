@@ -152,8 +152,12 @@ static void present_frame(int frame)
 {
     if (palette_dirty) rebuild_palette(current_pal);
 
-    /* Composite 2D overlays (rendered at 320×200) onto native fb. */
-    V_CompositeOverlay(frame_buffer[frame]);
+    /* Composite 2D overlays only during gameplay (VIDEO_TYPE_DOUBLE=3).
+     * Skip during splash screens (SINGLE=4), title (NONE=0), wipe (5)
+     * etc. to avoid HUD background painting over artwork. */
+    if (next_video_type == 3) { /* VIDEO_TYPE_DOUBLE only */
+        V_CompositeOverlay(frame_buffer[frame]);
+    }
 
     const uint8_t *src = frame_buffer[frame];
     uint16_t *dst = g_fb;

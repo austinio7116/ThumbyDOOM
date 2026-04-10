@@ -114,9 +114,9 @@ void __wrap_panic_unsupported(void)
     for (;;) tight_loop_contents();
 }
 
-/* Zone heap. 200 KB — the extra 40 KB came from halving
- * RENDER_COL_MAX (7200→3600, saving 43 KB of list_buffer). */
-static byte zone[200 * 1024] __attribute__((aligned(4)));
+/* Zone heap. 160 KB — RENDER_COL_MAX back to 7200 to rule out
+ * column overflow as crash cause. */
+static byte zone[160 * 1024] __attribute__((aligned(4)));
 
 byte *I_ZoneBase(int *size)
 {

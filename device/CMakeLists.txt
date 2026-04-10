@@ -288,7 +288,10 @@ target_compile_definitions(thumbydoom PRIVATE
     USE_MEMORY_WAD=1
     PICO_DEBUG_MALLOC=1
     EMU8950_NO_RATECONV=1
-    PICO_CORE1_STACK_SIZE=0x4f8
+    # Core0 stack: 8KB (Doom BSP + pd_render + thinkers need depth).
+    # Core1 stack: 2KB (sound mixer only).
+    PICO_STACK_SIZE=0x2000
+    PICO_CORE1_STACK_SIZE=0x800
     NO_IERROR=1
     NO_ZONE_DEBUG=1
 
