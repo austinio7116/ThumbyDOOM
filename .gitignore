@@ -9,4 +9,6 @@ build_*/
 *.a
 doom1.whd
 *.wad
-thumbydoom_*.uf2
+# Only shareware UF2 goes in the repo — full game builds stay local
+thumbydoom_ultimate.uf2
+thumbydoom_doom2.uf2
