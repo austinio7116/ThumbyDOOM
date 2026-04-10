@@ -6,8 +6,6 @@
 
 #include "doomtype.h"
 
-typedef struct audio_buffer audio_buffer_t;
-
 #if USE_EMU8950_OPL
 #define PICO_SOUND_SAMPLE_FREQ 49716
 #else
@@ -18,7 +16,10 @@ typedef struct audio_buffer audio_buffer_t;
 #define NUM_SOUND_CHANNELS 8
 #endif
 
-void I_PicoSoundSetMusicGenerator(void (*generator)(audio_buffer_t *buffer));
+/* Music generator callback. The argument is a pointer to a
+ * compat_audio_buffer_t (see opl_thumby.c / i_picosound_thumby.c).
+ * Using void* to avoid pulling in audio_buffer type defs. */
+void I_PicoSoundSetMusicGenerator(void (*generator)(void *buffer));
 boolean I_PicoSoundIsInitialized(void);
 void I_PicoSoundFade(boolean in);
 boolean I_PicoSoundFading(void);

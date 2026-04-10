@@ -93,6 +93,8 @@ set(DOOM_PORT_SRC
     ${PORT}/i_main_thumby.c
     ${PORT}/i_video_thumby.c
     ${PORT}/i_sound_thumby.c
+    ${PORT}/i_picosound_thumby.c
+    ${PORT}/opl_thumby.c
     ${PORT}/i_system_thumby.c
     ${PORT}/i_timer_thumby.c
     ${PORT}/i_input_thumby.c

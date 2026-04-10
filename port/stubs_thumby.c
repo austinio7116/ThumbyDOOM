@@ -27,23 +27,7 @@ boolean net_client_connected = false;
 #include "picoflash.h"
 void picoflash_sector_program(uint32_t flash_offs, const uint8_t *data) { }
 
-/* opl_pico_driver — stub OPL driver. opl_api.c hooks this in but
- * we never play music in Phase 1. */
-#include "opl_internal.h"
-static int  opl_stub_init(unsigned int port_base)         { return 1; }
-static void opl_stub_shutdown(void)                       { }
-static unsigned int opl_stub_read(opl_port_t p)           { return 0; }
-static void opl_stub_write(opl_port_t p, unsigned int v)  { }
-static void opl_stub_set_cb(uint64_t us, opl_callback_t cb, void *d) { }
-static void opl_stub_clear_cb(void)                       { }
-static void opl_stub_lock(void)                           { }
-static void opl_stub_unlock(void)                         { }
-static void opl_stub_set_paused(int paused)               { }
-static void opl_stub_adjust(unsigned int o, unsigned int n) { }
-/* OPL_Delay is normally provided by opl_pico.c — we exclude that so
- * provide a no-op (the OPL probe loop calls it). */
-#include <stdint.h>
-void OPL_Delay(uint64_t us) { (void)us; }
+/* opl_pico_driver + OPL_Delay now provided by port/opl_thumby.c */
 
 /* mouse_* are defined by SDL i_video.c which we don't compile. */
 int mouse_threshold = 10;
@@ -84,15 +68,7 @@ unsigned int I_GetMemoryValue(unsigned int offset, int size)
 
 int usemouse = 0;
 
-const opl_driver_t opl_pico_driver =
-{
-    "PicoStub",
-    opl_stub_init, opl_stub_shutdown,
-    opl_stub_read, opl_stub_write,
-    opl_stub_set_cb, opl_stub_clear_cb,
-    opl_stub_lock, opl_stub_unlock,
-    opl_stub_set_paused, opl_stub_adjust,
-};
+/* opl_pico_driver now provided by port/opl_thumby.c */
 
 /* Additional symbols vendor sources reference but no compilation
  * unit defines under our flag set. */
