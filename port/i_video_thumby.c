@@ -213,19 +213,19 @@ static void present_frame(int frame)
 {
     if (palette_dirty) rebuild_palette(current_pal);
 
-    /* Always composite 2D overlays — the overlay buffer carries the
-     * menu (M_Drawer) during splash/title screens and the HUD
-     * (ST_Drawer) during gameplay. ST_Drawer is only called in
-     * GS_LEVEL, so compositing during splash screens shows menus
-     * without the HUD, matching original Doom behaviour.
+    /* Composite 2D overlays (HUD, menu) only during gameplay.
+     * Splash/title screens fill the full 128x128 buffer and should
+     * not have overlays painted on top.
      *
-     * Clear the status-bar rows first — the 3D renderer only writes
-     * rows 0..MAIN_VIEWHEIGHT-1, so the HUD area retains stale data
-     * from a previous frame. With double-buffering the two buffers
-     * can have different stale content, causing the HUD to flicker. */
-    memset(frame_buffer[frame] + MAIN_VIEWHEIGHT * SCREENWIDTH, 0,
-           (SCREENHEIGHT - MAIN_VIEWHEIGHT) * SCREENWIDTH);
-    V_CompositeOverlay(frame_buffer[frame]);
+     * During gameplay, clear the status-bar rows first — the 3D
+     * renderer only writes rows 0..MAIN_VIEWHEIGHT-1, so the HUD
+     * area retains stale data from a previous frame. Without this
+     * clear, double-buffering causes the HUD to flicker. */
+    if (next_video_type == 3) { /* VIDEO_TYPE_DOUBLE = gameplay */
+        memset(frame_buffer[frame] + MAIN_VIEWHEIGHT * SCREENWIDTH, 0,
+               (SCREENHEIGHT - MAIN_VIEWHEIGHT) * SCREENWIDTH);
+        V_CompositeOverlay(frame_buffer[frame]);
+    }
 
     const uint8_t *src = frame_buffer[frame];
     uint16_t *dst = g_fb;

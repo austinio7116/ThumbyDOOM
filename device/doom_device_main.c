@@ -66,6 +66,7 @@ void boot_printf(const char *text)
     boot_y += BOOT_LINE_H;
     doom_lcd_present(g_fb);
     doom_lcd_wait_idle();
+    sleep_ms(50);
 }
 
 static void boot_splash(void) {

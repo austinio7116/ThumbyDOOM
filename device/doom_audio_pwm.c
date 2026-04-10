@@ -25,7 +25,7 @@
 #define AUDIO_ENABLE_PIN  20
 #define TIMER_SLICE        4
 #define SAMPLE_RATE     22050
-#define PWM_WRAP          512   /* 9-bit DAC */
+#define PWM_WRAP          1024  /* 10-bit DAC — more headroom */
 
 /* Ring buffer: ~3 frames @ 30 fps worth of samples = 2205 frames.
  * Round up to a power of 2 for fast wrap. */
@@ -49,7 +49,7 @@ static void __isr __not_in_flash_func(audio_irq) (void) {
     }
     /* Map int16 [-32768..32767] → uint [0..PWM_WRAP-1].
      * Bias by half so silence sits in the middle of the swing. */
-    int v = ((int)s + 32768) >> 7;        /* /128 → ~511 max */
+    int v = ((int)s + 32768) >> 6;        /* /64 → ~1023 max */
     if (v < 0) v = 0;
     if (v >= PWM_WRAP) v = PWM_WRAP - 1;
     pwm_set_gpio_level(AUDIO_PWM_PIN, (uint32_t)v);
