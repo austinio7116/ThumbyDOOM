@@ -28,17 +28,24 @@ boolean net_client_connected = false;
 #if PICO_ON_DEVICE
 #include "hardware/flash.h"
 #include "hardware/sync.h"
-#include "pico/multicore.h"
+#include "pico/flash.h"
 
-/* Real flash write for save games. The caller (p_saveg.c) already
- * wraps this in save_and_disable_interrupts(). Core1's audio loop
- * and ISR are __not_in_flash_func so they're safe during flash ops.
- *
- * Erases one 4KB sector, then programs 4KB of data. */
+/* Callback for flash_safe_execute — runs with core1 paused and
+ * interrupts disabled. */
+typedef struct { uint32_t offs; const uint8_t *data; } flash_wr_t;
+static void flash_do_write(void *param) {
+    flash_wr_t *p = (flash_wr_t *)param;
+    flash_range_erase(p->offs, FLASH_SECTOR_SIZE);
+    flash_range_program(p->offs, p->data, FLASH_SECTOR_SIZE);
+}
+
+/* Real flash write for save games. flash_safe_execute handles
+ * pausing core1 (NMI lockout), disabling interrupts, and
+ * restoring everything after the write completes. */
 void picoflash_sector_program(uint32_t flash_offs, const uint8_t *data)
 {
-    flash_range_erase(flash_offs, FLASH_SECTOR_SIZE);
-    flash_range_program(flash_offs, data, FLASH_SECTOR_SIZE);
+    flash_wr_t p = { flash_offs, data };
+    flash_safe_execute(flash_do_write, &p, UINT32_MAX);
 }
 #else
 void picoflash_sector_program(uint32_t flash_offs, const uint8_t *data) { }

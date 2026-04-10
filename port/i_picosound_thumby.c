@@ -273,6 +273,9 @@ static void mix_audio(int16_t *out, int n_samples)
 #if PICO_ON_DEVICE
 static void __not_in_flash_func(core1_sound_loop)(void)
 {
+    /* Allow core0 to pause us via NMI during flash writes (save game). */
+    multicore_lockout_victim_init();
+
     int16_t buf[MIX_BUFFER_SAMPLES];
     while (1) {
         if (doom_audio_pwm_room() >= MIX_BUFFER_SAMPLES) {

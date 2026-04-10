@@ -352,6 +352,7 @@ target_link_options(thumbydoom PRIVATE
 target_link_libraries(thumbydoom PRIVATE
     pico_stdlib
     pico_multicore
+    pico_flash
     hardware_clocks
     hardware_spi
     hardware_dma
