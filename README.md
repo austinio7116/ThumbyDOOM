@@ -16,7 +16,7 @@ standard Thumby Color firmware from
 [thumby.us](https://color.thumby.us/pages/firmware-and-updating/firmware-and-updating/)
 and re-upload your games.
 
-1. Download **`thumbydoom.uf2`** from this repo
+1. Download **`thumbydoom_shareware.uf2`** from this repo
 2. Turn off your Thumby Color
 3. Hold **DOWN** on the d-pad while turning it on (enters flash mode)
 4. Drag the `.uf2` file onto the **RPI-RP2350** USB drive that appears
