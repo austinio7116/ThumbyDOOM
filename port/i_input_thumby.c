@@ -20,6 +20,7 @@
 #include "doomkeys.h"
 #include "d_event.h"
 #include "i_input.h"
+#include "m_controls.h"
 
 #include "pico/stdlib.h"
 #include "hardware/gpio.h"
@@ -79,18 +80,37 @@ static const button_map_t btn_map[] = {
 };
 #define NBTN ((int)(sizeof(btn_map)/sizeof(btn_map[0])))
 
-static uint32_t prev_state = 0;  /* bit i = btn_map[i] held */
-static int tab_held = 0;         /* LB+RB combo state for automap */
+static uint32_t prev_state = 0;     /* bit i = btn_map[i] held */
 
-#define LB_IDX  4
-#define RB_IDX  5
+#define B_IDX           7
+#define LB_IDX          4
+#define RB_IDX          5
+#define LONG_PRESS_MS   400          /* hold B this long → automap */
+
+/* Keycodes for prev/next weapon — matched in I_InitInput. */
+#define KEY_WPREV       '['
+#define KEY_WNEXT       ']'
+
+static uint32_t b_press_start;       /* timestamp when B was pressed */
+static int      b_long_fired;        /* already sent TAB this press? */
+static int      b_suppressed;        /* suppress B release after long press */
 
 extern void D_PostEvent(event_t *ev);
 
-void I_InitInput(void)             { }
+void I_InitInput(void)
+{
+    /* Bind prev/next weapon keys so g_game.c recognises them. */
+    extern key_type_t key_prevweapon, key_nextweapon;
+    key_prevweapon = KEY_WPREV;
+    key_nextweapon = KEY_WNEXT;
+}
 void I_ShutdownInput(void)         { }
 void I_StartTextInput(int x1, int y1, int x2, int y2) { }
 void I_StopTextInput(void)         { }
+
+static uint32_t now_ms(void) {
+    return (uint32_t)(time_us_64() / 1000);
+}
 
 void I_GetEvent(void)
 {
@@ -100,25 +120,71 @@ void I_GetEvent(void)
         if (!gpio_get(btn_map[i].gpio)) cur |= (1u << i);
     }
 
-    /* LB+RB combo → KEY_TAB (automap toggle).
-     * When both are held, suppress individual strafe events
-     * and send TAB instead. */
-    int both_held = (cur & (1u << LB_IDX)) && (cur & (1u << RB_IDX));
-    if (both_held && !tab_held) {
-        event_t ev = { ev_keydown, KEY_TAB, -1, -1 };
-        D_PostEvent(&ev);
-        tab_held = 1;
-        /* Suppress individual LB/RB events this frame. */
-        prev_state |= (1u << LB_IDX) | (1u << RB_IDX);
-    } else if (!both_held && tab_held) {
-        event_t ev = { ev_keyup, KEY_TAB, -1, -1 };
-        D_PostEvent(&ev);
-        tab_held = 0;
+    /* B + LB = prev weapon, B + RB = next weapon.
+     * B long-press (no trigger) = automap toggle.
+     * Short B = use (SPACE) as normal. */
+    uint32_t b_mask  = 1u << B_IDX;
+    uint32_t lb_mask = 1u << LB_IDX;
+    uint32_t rb_mask = 1u << RB_IDX;
+    static int weapon_chord;  /* 1 if B+trigger consumed this press */
+
+    if ((cur & b_mask) && !(prev_state & b_mask)) {
+        /* B just pressed — start timing. */
+        b_press_start = now_ms();
+        b_long_fired = 0;
+        b_suppressed = 0;
+        weapon_chord = 0;
     }
 
-    /* Suppress LB/RB while combo is active. */
-    uint32_t suppress = tab_held ? ((1u << LB_IDX) | (1u << RB_IDX)) : 0;
+    /* B held + trigger pressed → weapon switch. */
+    if ((cur & b_mask) && !b_long_fired) {
+        if ((cur & lb_mask) && !(prev_state & lb_mask) && !weapon_chord) {
+            event_t ev = { ev_keydown, KEY_WPREV, -1, -1 };
+            D_PostEvent(&ev);
+            ev.type = ev_keyup;
+            D_PostEvent(&ev);
+            weapon_chord = 1;
+            b_suppressed = 1;
+        }
+        if ((cur & rb_mask) && !(prev_state & rb_mask) && !weapon_chord) {
+            event_t ev = { ev_keydown, KEY_WNEXT, -1, -1 };
+            D_PostEvent(&ev);
+            ev.type = ev_keyup;
+            D_PostEvent(&ev);
+            weapon_chord = 1;
+            b_suppressed = 1;
+        }
+    }
+
+    /* Long-press B (no chord) → automap toggle. */
+    if ((cur & b_mask) && !b_long_fired && !weapon_chord) {
+        if (now_ms() - b_press_start >= LONG_PRESS_MS) {
+            event_t ev = { ev_keydown, KEY_TAB, -1, -1 };
+            D_PostEvent(&ev);
+            ev.type = ev_keyup;
+            D_PostEvent(&ev);
+            b_long_fired = 1;
+            b_suppressed = 1;
+            if (prev_state & b_mask) {
+                event_t up = { ev_keyup, ' ', -1, -1 };
+                D_PostEvent(&up);
+                up.data1 = 'y';
+                D_PostEvent(&up);
+            }
+        }
+    }
+
+    /* Suppress B and triggers while chord/long-press is active. */
+    uint32_t suppress = 0;
+    if (b_suppressed) suppress |= b_mask;
+    if (weapon_chord)  suppress |= lb_mask | rb_mask;
     uint32_t changed = (cur ^ prev_state) & ~suppress;
+
+    if (!(cur & b_mask) && b_suppressed) {
+        b_suppressed = 0;
+        weapon_chord = 0;
+    }
+
     if (changed) {
         for (int i = 0; i < NBTN; i++) {
             uint32_t mask = 1u << i;

@@ -76,7 +76,7 @@ static void boot_splash(void) {
     for (int py = 0; py < 8; py++)
         for (int px = 0; px < 128; px++)
             g_fb[py * 128 + px] = DOS_RED_BG;
-    doom_font_draw(g_fb, "DOOM System Startup v1.666", 2, 1, 0xFFFF);
+    doom_font_draw(g_fb, "ThumbyDOOM v1.0", 2, 1, 0xFFFF);
     doom_lcd_present(g_fb);
     doom_lcd_wait_idle();
 }

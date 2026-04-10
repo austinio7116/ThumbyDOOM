@@ -3,69 +3,105 @@
 Bare-metal DOOM for the [Thumby Color](https://thumby.us/) (RP2350).
 
 Standalone firmware. Shareware DOOM1.WAD is baked into the UF2 as a
-pre-processed WHD blob; no filesystem, no drag-and-drop. Flash the
-UF2 and play.
+pre-processed WHD blob. Flash the UF2 and play.
 
-- Target: RP2350, 520 KB SRAM, 16 MB QSPI flash, GC9107 128×128 RGB565
-- Base: [kilograham/rp2040-doom](https://github.com/kilograham/rp2040-doom)
-  (Chocolate Doom derivative), vendored under `vendor/rp2040-doom`
-- Native 128×128 rendering with a custom slim HUD
-- OPL2 software synth for music, multi-channel SFX, PWM audio
-- Dual core: core0 = game + renderer, core1 = audio mixer
+## Features
+
+- Native 128x128 rendering via pd_render (no software downscale)
+- OPL2 music + 8-channel SFX via PWM audio on core1
+- Classic screen melt wipe transitions
+- Save/load to flash (6 slots)
+- 16-row status bar at correct aspect ratio with 2x2 blend filter
+- Automap support
+- DOS-style boot log showing real init messages
+- HardFault handler for crash diagnostics
+
+## Hardware
+
+- **MCU**: RP2350 @ 250 MHz, 520 KB SRAM
+- **Display**: GC9107 128x128 RGB565 SPI LCD
+- **Audio**: PWM 10-bit DAC @ 22050 Hz
+- **Flash**: QSPI (firmware + WHD blob + save data)
 
 ## Controls
 
-| Button | Action                |
-|--------|-----------------------|
-| D-pad  | Move / turn           |
-| LB     | Strafe modifier       |
-| A      | Fire                  |
-| B      | Use / open            |
-| RB     | Next weapon           |
-| MENU   | Doom menu (ESC)       |
+| Button | Action |
+|--------|--------|
+| D-pad L/R | Turn left / right |
+| D-pad U/D | Move forward / back |
+| LB | Strafe left |
+| RB | Strafe right |
+| A | Fire / menu confirm |
+| B (short) | Use / open doors |
+| B (hold) | Toggle automap |
+| B + LB | Previous weapon |
+| B + RB | Next weapon |
+| MENU | Pause menu (ESC) |
 
 ## Build
 
-Requires:
+### Prerequisites
 
 - `arm-none-eabi-gcc` (Pico SDK cross toolchain)
-- Pico SDK checked out somewhere (`PICO_SDK_PATH=...`)
-- Host SDL2 + SDL2_mixer (only to build `whd_gen` once)
-- `doom1.wad` shareware at `/tmp/doom1.wad`
+- Pico SDK (`PICO_SDK_PATH` environment variable)
+- `doom1.wad` (shareware) for WHD generation
 
-One-time: generate the WHD blob.
+### One-time: generate the WHD blob
 
 ```sh
 cmake -B build_host vendor/rp2040-doom -DCMAKE_BUILD_TYPE=Release
 cmake --build build_host --target whd_gen -j8
-build_host/src/whd_gen/whd_gen /tmp/doom1.wad doom1.whd -no-super-tiny
+build_host/src/whd_gen/whd_gen /path/to/doom1.wad doom1.whd -no-super-tiny
 ```
 
-Device firmware:
+### Device firmware
 
 ```sh
 cmake -B build_device -S device -DPICO_SDK_PATH=$PICO_SDK_PATH
 cmake --build build_device -j8
-# → build_device/thumbydoom.uf2
+# Output: build_device/thumbydoom.uf2
 ```
 
-Flash: hold DOWN on the d-pad while powering on to enter BOOTSEL,
-then drag the UF2 onto the RPI-RP2350 drive.
+### Flashing
 
-## Status
+1. Power off the Thumby Color
+2. Hold DOWN on the d-pad while powering on (enters BOOTSEL)
+3. Drag `thumbydoom.uf2` onto the RPI-RP2350 USB drive
 
-- **Phase 0** — skeleton firmware boots, LCD/audio/buttons initialized.
-- **Phase 1** — Doom sources + WHD linked in, tic loop running (WIP).
-- **Phase 2** — renderer → 128×128 framebuffer, input wired, E1M1 playable.
-- **Phase 3** — OPL2 music + SFX on core1.
-- **Phase 4** — full shareware playthrough, saves, slim HUD polish.
+## Architecture
 
-## Licenses
+```
+Core 0: Game loop + pd_render (128x128) + LCD present via SPI DMA
+Core 1: OPL2 music (emu8950 @ 49716 Hz) + SFX ADPCM → PWM ring buffer
+```
 
-Doom sources are GPLv2 (Id Software / Chocolate Doom / rp2040-doom
-contributors). This repo is GPLv2 overall. See `vendor/rp2040-doom/COPYING.md`.
+| Component | Size | Purpose |
+|-----------|------|---------|
+| Zone heap | 160 KB | Doom's dynamic allocator |
+| list_buffer | ~90 KB | pd_render column data |
+| v_overlay_buf | 64 KB | 320x200 overlay staging |
+| frame_buffer | 32 KB | 2x 128x128 8-bit indexed |
+| g_fb | 32 KB | 128x128 RGB565 LCD buffer |
+| Audio ring | 8 KB | PWM sample ring buffer |
 
-The shareware WAD is distributed by Id Software under the original
-DOOM1.WAD distribution terms — only the pre-processed WHD blob is
-embedded in the firmware, and only on devices built locally from a
-copy of the shareware WAD the user already possesses.
+### Key compile defines
+
+- `SCREENWIDTH=128 SCREENHEIGHT=128 MAIN_VIEWHEIGHT=112`
+- `THUMBY_NATIVE=1` — full pointers (no shortptr encoding)
+- `DOOM_TINY=1 DOOM_SMALL=1` — compressed structures
+- `PICODOOM_RENDER_NEWHOPE=1` — kilograham's column renderer
+
+## Credits
+
+- [Id Software](https://www.idsoftware.com/) — DOOM (GPLv2)
+- [Chocolate Doom](https://www.chocolate-doom.org/) — clean Doom source port
+- [kilograham/rp2040-doom](https://github.com/kilograham/rp2040-doom) — RP2040 port with pd_render
+- [TinyCircuits](https://tinycircuits.com/) — Thumby Color hardware
+
+## License
+
+GPLv2. See `vendor/rp2040-doom/COPYING.md`.
+
+The shareware WAD is distributed under Id Software's original terms.
+Only the pre-processed WHD blob is embedded in firmware built locally
+from a copy of the shareware WAD the user already possesses.
