@@ -1,30 +1,26 @@
 # ThumbyDOOM
 
-Bare-metal DOOM for the [Thumby Color](https://thumby.us/) (RP2350).
+DOOM on the [Thumby Color](https://thumby.us/) — the world's smallest
+color gaming handheld.
 
-Standalone firmware. Shareware DOOM1.WAD is baked into the UF2 as a
-pre-processed WHD blob. Flash the UF2 and play.
+Full shareware DOOM (Episode 1) running as standalone bare-metal
+firmware on the RP2350. Music, sound effects, save games, screen
+melts — the real deal on a 128x128 screen.
 
-## Features
+## Quick Start
 
-- Native 128x128 rendering via pd_render (no software downscale of a larger framebuffer)
-- OPL2 music + 8-channel SFX via PWM audio on core1
-- Classic screen melt wipe transitions
-- Save/load to flash (6 slots)
-- 16-row status bar at correct aspect ratio with 2x2 blend filter
-- Automap support (long-press B)
-- Weapon switching (B + LB/RB)
-- DOS-style boot log showing real init messages
-- HardFault handler for crash diagnostics
+1. Download **`thumbydoom.uf2`** from this repo
+2. Turn off your Thumby Color
+3. Hold **DOWN** on the d-pad while turning it on (enters flash mode)
+4. Drag the `.uf2` file onto the **RPI-RP2350** USB drive that appears
+5. The device reboots and DOOM starts
 
-## Hardware
+To go back to normal Thumby Color firmware, repeat steps 2-4 with
+the standard Thumby Color firmware `.uf2` file.
 
-- **MCU**: RP2350 @ 250 MHz, 520 KB SRAM
-- **Display**: GC9107 128x128 RGB565 SPI LCD
-- **Audio**: PWM 10-bit DAC @ 22050 Hz
-- **Flash**: QSPI (firmware + WHD blob + save data)
+## How to Play
 
-## Controls
+### Controls
 
 | Button | Action |
 |--------|--------|
@@ -33,13 +29,43 @@ pre-processed WHD blob. Flash the UF2 and play.
 | LB | Strafe left |
 | RB | Strafe right |
 | A | Fire / menu confirm |
-| B (short) | Use / open doors |
-| B (hold) | Toggle automap |
+| B (tap) | Use / open doors |
+| B (hold 0.4s) | Toggle automap |
 | B + LB | Previous weapon |
 | B + RB | Next weapon |
-| MENU | Pause menu (ESC) |
+| MENU | Open pause menu |
 
-## Build
+### Tips
+
+- **Opening doors**: Walk up to a door and tap **B**
+- **Switching weapons**: Hold **B** then tap **LB** (prev) or **RB** (next)
+  to cycle through your arsenal. You get new weapons by picking them up.
+- **Automap**: Hold **B** for half a second to toggle the map overlay.
+  Use the d-pad to look around. Hold **B** again to close it.
+- **Saving your game**: Press **MENU** to open the pause menu, select
+  "Save Game", then pick a slot. The game saves instantly to flash.
+- **Loading a save**: From the pause menu, select "Load Game" and pick
+  your slot. This also works from the title screen.
+- **Menu navigation**: **A** confirms, **MENU** goes back
+- **Secrets**: Doom is full of hidden rooms. Look for walls that are a
+  slightly different texture — walk up and tap **B** to open them.
+
+### Status Bar
+
+The bottom of the screen shows your health, armor, ammo, and the
+Doomguy's face (which reacts to damage direction). Key cards appear
+as colored markers when collected.
+
+## Features
+
+- Native 128x128 rendering (not a downscaled larger frame)
+- OPL2 music + 8-channel SFX
+- Classic screen melt transitions between levels
+- Save/load to flash (6 slots, persists across power cycles)
+- Correctly scaled status bar with smooth text (2x2 blend filter)
+- DOS-style boot log showing real initialization messages
+
+## Build from Source
 
 ### Prerequisites
 
