@@ -88,7 +88,16 @@
 #define SP_STATSY		50
 
 #define SP_TIMEX		16
-#define SP_TIMEY		(SCREENHEIGHT-32)
+#if THUMBY_NATIVE
+/* Intermission draws into the 320×200 overlay buffer; use overlay
+ * dimensions for positioning, not the native SCREENWIDTH/HEIGHT. */
+#define WI_WIDTH  320
+#define WI_HEIGHT 200
+#else
+#define WI_WIDTH  SCREENWIDTH
+#define WI_HEIGHT SCREENHEIGHT
+#endif
+#define SP_TIMEY		(WI_HEIGHT-32)
 
 
 // NET GAME STUFF
@@ -494,18 +503,18 @@ void WI_drawLF(void)
     if (gamemode != commercial || wbs->last < NUMCMAPS)
     {
         // draw <LevelName> 
-        V_DrawPatch((SCREENWIDTH - rvpatch_width(lname_patch(wbs->last)))/2,
+        V_DrawPatch((WI_WIDTH - rvpatch_width(lname_patch(wbs->last)))/2,
                     y, lname_patch(wbs->last));
 
         // draw "Finished!"
         y += (5*rvpatch_height(lname_patch(wbs->last)))/4;
 
-        V_DrawPatch((SCREENWIDTH - rvpatch_width(finished)) / 2, y, finished);
+        V_DrawPatch((WI_WIDTH - rvpatch_width(finished)) / 2, y, finished);
     }
     else if (wbs->last == NUMCMAPS)
     {
         // MAP33 - draw "Finished!" only
-        V_DrawPatch((SCREENWIDTH - rvpatch_width(finished)) / 2, y, finished);
+        V_DrawPatch((WI_WIDTH - rvpatch_width(finished)) / 2, y, finished);
     }
     else if (wbs->last > NUMCMAPS)
     {
@@ -515,7 +524,7 @@ void WI_drawLF(void)
         // anyway.  This deliberately triggers a V_DrawPatch error.
 
 #if !USE_WHD // don't care about this behavior which causes compile warning with WHD
-        patch_t tmp = { SCREENWIDTH, SCREENHEIGHT, 1, 1, 
+        patch_t tmp = { WI_WIDTH, WI_HEIGHT, 1, 1,
                         { 0, 0, 0, 0, 0, 0, 0, 0 } };
 
         V_DrawPatch(0, y, &tmp);
@@ -529,14 +538,14 @@ void WI_drawEL(void)
     int y = WI_TITLEY;
 
     // draw "Entering"
-    V_DrawPatch((SCREENWIDTH - rvpatch_width(entering))/2,
+    V_DrawPatch((WI_WIDTH - rvpatch_width(entering))/2,
 		y,
                 entering);
 
     // draw level
     y += (5*rvpatch_height(lname_patch(wbs->next)))/4;
 
-    V_DrawPatch((SCREENWIDTH - rvpatch_width(lname_patch(wbs->next)))/2,
+    V_DrawPatch((WI_WIDTH - rvpatch_width(lname_patch(wbs->next)))/2,
 		y, 
                 lname_patch(wbs->next));
 
@@ -564,9 +573,9 @@ WI_drawOnLnode
 	bottom = top + rvpatch_height(c[i]);
 
 	if (left >= 0
-	    && right < SCREENWIDTH
+	    && right < WI_WIDTH
 	    && top >= 0
-	    && bottom < SCREENHEIGHT)
+	    && bottom < WI_HEIGHT)
 	{
 	    fits = true;
 	}
@@ -1534,25 +1543,25 @@ void WI_drawStats(void)
     WI_drawLF();
 
     V_DrawPatch(SP_STATSX, SP_STATSY, kills);
-    WI_drawPercent(SCREENWIDTH - SP_STATSX, SP_STATSY, cnt_kills[0]);
+    WI_drawPercent(WI_WIDTH - SP_STATSX, SP_STATSY, cnt_kills[0]);
 
     V_DrawPatch(SP_STATSX, SP_STATSY+lh, items);
-    WI_drawPercent(SCREENWIDTH - SP_STATSX, SP_STATSY+lh, cnt_items[0]);
+    WI_drawPercent(WI_WIDTH - SP_STATSX, SP_STATSY+lh, cnt_items[0]);
 
     V_DrawPatch(SP_STATSX, SP_STATSY+2*lh, sp_secret);
-    WI_drawPercent(SCREENWIDTH - SP_STATSX, SP_STATSY+2*lh, cnt_secret[0]);
+    WI_drawPercent(WI_WIDTH - SP_STATSX, SP_STATSY+2*lh, cnt_secret[0]);
 
     V_DrawPatch(SP_TIMEX, SP_TIMEY, timepatch);
-    WI_drawTime(SCREENWIDTH/2 - SP_TIMEX, SP_TIMEY, cnt_time);
+    WI_drawTime(WI_WIDTH/2 - SP_TIMEX, SP_TIMEY, cnt_time);
 
     if (wbs->epsd < 3)
     {
-        V_DrawPatch(SCREENWIDTH/2 + SP_TIMEX, SP_TIMEY, par);
+        V_DrawPatch(WI_WIDTH/2 + SP_TIMEX, SP_TIMEY, par);
 
         // Emulation: don't draw partime value if map33
         if (gamemode != commercial || wbs->last != NUMCMAPS)
         {
-            WI_drawTime(SCREENWIDTH - SP_TIMEX, SP_TIMEY, cnt_par);
+            WI_drawTime(WI_WIDTH - SP_TIMEX, SP_TIMEY, cnt_par);
         }
     }
 

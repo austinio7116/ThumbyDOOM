@@ -213,10 +213,10 @@ static void present_frame(int frame)
 {
     if (palette_dirty) rebuild_palette(current_pal);
 
-    /* Palette-LUT the 3D view into RGB565 g_fb. During gameplay,
-     * clear the HUD rows first (3D renderer only writes rows
-     * 0..MAIN_VIEWHEIGHT-1; stale data causes flicker). */
-    if (next_video_type == 3) { /* VIDEO_TYPE_DOUBLE = gameplay */
+    /* Clear HUD rows during gameplay only — the 3D renderer writes
+     * rows 0..MAIN_VIEWHEIGHT-1, leaving the HUD area with stale
+     * data that differs between double-buffered frames. */
+    if (next_video_type == 3) { /* VIDEO_TYPE_DOUBLE */
         memset(frame_buffer[frame] + MAIN_VIEWHEIGHT * SCREENWIDTH, 0,
                (SCREENHEIGHT - MAIN_VIEWHEIGHT) * SCREENWIDTH);
     }
@@ -227,29 +227,28 @@ static void present_frame(int frame)
         dst[i] = palette_rgb565[src[i]];
     }
 
-    /* Composite 2D overlay (HUD + menu) with 2×2 box-filter blend.
+    /* Composite 2D overlay with 2×2 box-filter blend.
      * The overlay is 320×200 8-bit indexed; we downsample to 128×128
      * RGB565 with a 4-pixel average for smooth text/HUD.
      *
-     * Y mapping uses two zones so the STBAR has correct aspect ratio:
-     *   Dest 0..MAIN_VIEWHEIGHT-1   ← Source 0..167  (menu/text area)
-     *   Dest MAIN_VIEWHEIGHT..127    ← Source 168..199 (STBAR, 32 rows)
-     * X mapping is uniform: 320 → 128 (scale 0.4).
-     * The STBAR Y scale (32→12 = 0.375) matches X (0.4) closely,
-     * giving correct face aspect with no vertical stretching.
-     *
-     * Only during gameplay — splash screens should be clean. */
+     * During gameplay (VIDEO_TYPE_DOUBLE), use split Y mapping so
+     * the 32-row STBAR maps to exactly the 16-row HUD area.
+     * Otherwise, use linear 200→128 for correct text positioning. */
 #define STBAR_SRC_TOP 168
 #define STBAR_SRC_H   32
 #define HUD_H         (SCREENHEIGHT - MAIN_VIEWHEIGHT)
-    if (next_video_type == 3) {
+    {
         extern uint8_t v_overlay_buf[];
+        int use_split = (next_video_type == 3);
         for (int dy = 0; dy < SCREENHEIGHT; dy++) {
             int sy;
-            if (dy < MAIN_VIEWHEIGHT) {
-                sy = (dy * STBAR_SRC_TOP) / MAIN_VIEWHEIGHT;
+            if (use_split) {
+                if (dy < MAIN_VIEWHEIGHT)
+                    sy = (dy * STBAR_SRC_TOP) / MAIN_VIEWHEIGHT;
+                else
+                    sy = STBAR_SRC_TOP + ((dy - MAIN_VIEWHEIGHT) * STBAR_SRC_H) / HUD_H;
             } else {
-                sy = STBAR_SRC_TOP + ((dy - MAIN_VIEWHEIGHT) * STBAR_SRC_H) / HUD_H;
+                sy = (dy * 200) / SCREENHEIGHT;
             }
             int sy1 = sy + 1; if (sy1 >= 200) sy1 = 199;
             const uint8_t *row0 = v_overlay_buf + sy  * 320;

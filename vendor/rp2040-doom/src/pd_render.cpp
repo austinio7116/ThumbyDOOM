@@ -3092,7 +3092,13 @@ void pd_end_frame(int wipe_start) {
 #if THUMBY_NATIVE
     /* Draw the overlay vpatchlist (HUD digits, face, menu items,
      * HU messages) into v_overlay_buf. In rp2040-doom this is
-     * consumed by core1's scanvideo loop; we do it explicitly. */
+     * consumed by core1's scanvideo loop; we do it explicitly.
+     *
+     * Restore vpatch_clip_bottom to 200 (full 320×200 coordinate
+     * space) — draw_framebuffer_patches_fullscreen sets it to
+     * SCREENHEIGHT (128) which clips all overlay content below
+     * Y=128, hiding the STBAR and lower intermission text. */
+    vpatch_clip_bottom = 200;
     V_RestoreBuffer();
     V_DrawPatchList(vpatchlists->overlays[next_overlay_index]);
 #endif

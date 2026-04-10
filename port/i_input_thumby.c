@@ -97,13 +97,7 @@ static int      b_suppressed;        /* suppress B release after long press */
 
 extern void D_PostEvent(event_t *ev);
 
-void I_InitInput(void)
-{
-    /* Bind prev/next weapon keys so g_game.c recognises them. */
-    extern key_type_t key_prevweapon, key_nextweapon;
-    key_prevweapon = KEY_WPREV;
-    key_nextweapon = KEY_WNEXT;
-}
+void I_InitInput(void)             { }
 void I_ShutdownInput(void)         { }
 void I_StartTextInput(int x1, int y1, int x2, int y2) { }
 void I_StopTextInput(void)         { }
@@ -114,6 +108,15 @@ static uint32_t now_ms(void) {
 
 void I_GetEvent(void)
 {
+    /* Bind weapon keys on first call (I_InitInput isn't called). */
+    static int binds_set;
+    if (!binds_set) {
+        extern key_type_t key_prevweapon, key_nextweapon;
+        key_prevweapon = KEY_WPREV;
+        key_nextweapon = KEY_WNEXT;
+        binds_set = 1;
+    }
+
     uint32_t cur = 0;
     for (int i = 0; i < NBTN; i++) {
         /* GPIOs are pull-ups, active low. */
@@ -185,22 +188,22 @@ void I_GetEvent(void)
         weapon_chord = 0;
     }
 
-    if (changed) {
-        for (int i = 0; i < NBTN; i++) {
-            uint32_t mask = 1u << i;
-            if (changed & mask) {
-                event_t ev;
-                ev.type  = (cur & mask) ? ev_keydown : ev_keyup;
-                ev.data2 = -1;
-                ev.data3 = -1;
-                ev.data1 = btn_map[i].doom_key;
+    for (int i = 0; i < NBTN; i++) {
+        uint32_t mask = 1u << i;
+        if (changed & mask) {
+            event_t ev;
+            ev.type  = (cur & mask) ? ev_keydown : ev_keyup;
+            ev.data2 = -1;
+            ev.data3 = -1;
+            ev.data1 = btn_map[i].doom_key;
+            D_PostEvent(&ev);
+            if (btn_map[i].doom_key_alt) {
+                ev.data1 = btn_map[i].doom_key_alt;
                 D_PostEvent(&ev);
-                if (btn_map[i].doom_key_alt) {
-                    ev.data1 = btn_map[i].doom_key_alt;
-                    D_PostEvent(&ev);
-                }
             }
         }
-        prev_state = cur;
     }
+    /* Always update prev_state — even for suppressed buttons, so
+     * chord/long-press logic doesn't see stale transitions. */
+    prev_state = cur;
 }

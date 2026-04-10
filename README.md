@@ -7,12 +7,13 @@ pre-processed WHD blob. Flash the UF2 and play.
 
 ## Features
 
-- Native 128x128 rendering via pd_render (no software downscale)
+- Native 128x128 rendering via pd_render (no software downscale of a larger framebuffer)
 - OPL2 music + 8-channel SFX via PWM audio on core1
 - Classic screen melt wipe transitions
 - Save/load to flash (6 slots)
 - 16-row status bar at correct aspect ratio with 2x2 blend filter
-- Automap support
+- Automap support (long-press B)
+- Weapon switching (B + LB/RB)
 - DOS-style boot log showing real init messages
 - HardFault handler for crash diagnostics
 
@@ -90,6 +91,141 @@ Core 1: OPL2 music (emu8950 @ 49716 Hz) + SFX ADPCM → PWM ring buffer
 - `THUMBY_NATIVE=1` — full pointers (no shortptr encoding)
 - `DOOM_TINY=1 DOOM_SMALL=1` — compressed structures
 - `PICODOOM_RENDER_NEWHOPE=1` — kilograham's column renderer
+- `USE_THINKER_POOL=0` — disabled to work around a 1-byte memory corruption
+
+## Vendor Modifications (rp2040-doom)
+
+The vendored [rp2040-doom](https://github.com/kilograham/rp2040-doom) code
+is included directly (not as a submodule) with modifications gated by
+`#if THUMBY_NATIVE`. The original project targets the RP2040 (264 KB SRAM)
+with a PIO scanvideo display and dual-core rendering pipeline. The Thumby
+Color has an RP2350 (520 KB SRAM) with a 128x128 SPI LCD. The following
+changes were required:
+
+### Memory model (`doomtype.h`, `z_zone.c`, `d_think.h`)
+
+**Problem:** rp2040-doom uses 16-bit `shortptr_t` with a 256 KB memory
+window and pointer encoding (`SHORTPTR_BASE`). This tightly couples the
+memory layout to the RP2040's 264 KB SRAM and requires careful linker
+script tuning.
+
+**Fix:** On THUMBY_NATIVE, `shortptr_t` is `void*` (full 32-bit pointer).
+All encoding/decoding macros become pass-through. The `memblock_t` and
+`thinker_t` size assertions are relaxed since the structs are larger with
+wider pointers. The non-pool `Z_ThinkMalloc` path is fixed to work with
+`NO_Z_MALLOC_USER_PTR` (cast to satisfy C++ compilation).
+
+### Display architecture (`pd_render.cpp`, `v_video.c`, `i_video.h`)
+
+**Problem:** rp2040-doom uses PIO scanvideo with beam-racing on core1.
+The display driver generates scanlines on-the-fly from the column render
+data. This architecture doesn't apply to an SPI LCD.
+
+**Fix:** Single-core display on core0. The frame is rendered to a
+128x128 8-bit indexed double-buffer, palette-converted to RGB565, and
+DMA'd to the GC9107 LCD. A 320x200 overlay staging buffer
+(`v_overlay_buf`) receives all 2D content (HUD, menus, intermission
+text) drawn at vanilla Doom's coordinate space. The overlay is
+downsampled to 128x128 with a 2x2 box-filter blend for smooth text,
+using a split Y-mapping during gameplay so the 32-row STBAR maps to
+exactly 16 native rows at correct aspect ratio.
+
+Key details:
+- `V_ClearOverlay()` runs at the start of each frame
+- `V_CompositeOverlay` replaced with RGB565 blend in `present_frame()`
+- `vpatch_clip_bottom` restored to 200 before overlay drawing (was
+  being left at 128 by `draw_framebuffer_patches_fullscreen`, clipping
+  the STBAR and lower intermission text)
+- Splash screens draw to full SCREENHEIGHT (not just MAIN_VIEWHEIGHT)
+- `draw_stbar_on_framebuffer()` simplified for single-buffer architecture
+- All core1 semaphore handshaking removed from the display path
+- `pd_start_save_pause` / `pd_end_save_pause` simplified (no semaphore
+  dance with a non-existent core1 display loop)
+
+### Resolution scaling (`r_main.c`, `r_things.c`)
+
+**Problem:** Weapon sprites (psprites) are designed for 320-pixel width.
+The view scaling code assumes 320-pixel base units. At 128 pixels, weapons
+appear at wrong positions and sizes.
+
+**Fix:**
+- `pspritescale = FRACUNIT * viewwidth / 320` (scale relative to vanilla
+  width, not native width)
+- Weapon X centering uses vanilla half-width (160) not native half (64)
+- `BASEYCENTER = 57` tuned for the 0.4x vertical scale so the weapon
+  sits at the correct screen position
+- `scaledviewwidth` computed from actual SCREENWIDTH instead of
+  hardcoded 320-pixel multiples
+
+### Screen transitions (`d_main.c`, `f_wipe.h`)
+
+**Problem:** rp2040-doom's wipe effect uses PIO scanline beam-racing with
+per-column Y offsets computed on core1. The classic Doom wipe
+(`f_wipe.c`) requires `!DOOM_TINY` which is incompatible with the
+compressed data structures.
+
+**Fix:** Custom melt wipe implemented at the RGB565 framebuffer level in
+`i_video_thumby.c`. Snapshots `g_fb` on state change, then composites
+old-screen columns sliding down using the classic random-walk
+acceleration curve. The game keeps ticking during the melt so audio and
+game state progress naturally. The wipe state machine in pd_render is
+killed (`wipestate = 0`) to prevent interference.
+
+### Save system (`m_menu.c`, `pd_render.cpp`)
+
+**Problem:** The save dialog expects keyboard text input for slot names.
+The save-pause mechanism uses semaphore handshaking with core1's display
+loop. Flash writes need core1 paused (it executes code from flash).
+
+**Fix:**
+- `M_SaveSelect` auto-fills "SAVE N" and saves immediately on
+  THUMBY_NATIVE (no text entry)
+- `pd_start_save_pause` / `pd_end_save_pause` skip the semaphore
+  protocol (single-core display)
+- `picoflash_sector_program` uses `flash_safe_execute()` from the
+  Pico SDK which handles multicore lockout via NMI, safely pausing
+  core1 during flash erase/program
+
+### Input (`i_input_thumby.c`)
+
+**Problem:** Doom expects a keyboard with number keys (weapon select),
+Tab (automap), and text entry. The Thumby Color has 9 buttons.
+
+**Fix:**
+- D-pad L/R = turn, U/D = forward/back
+- LB/RB = strafe left/right
+- A = fire + menu confirm, B = use + yes
+- Long-press B = automap toggle (KEY_TAB)
+- B + LB = previous weapon, B + RB = next weapon
+- MENU = ESC
+- `key_prevweapon` / `key_nextweapon` bound at runtime since
+  `I_InitInput` is never called by the engine
+
+### Audio (`i_picosound_thumby.c`, `opl_thumby.c`)
+
+**Problem:** rp2040-doom uses I2S audio output. The Thumby Color has a
+PWM amplifier on GPIO 23.
+
+**Fix:** Core1 runs a tight loop mixing OPL2 music (emu8950 at 49716 Hz,
+downsampled to 22050 Hz) with 8-channel ADPCM SFX into a 10-bit PWM DAC
+via a ring buffer. Mixing uses int32 accumulators with proper clamping to
+prevent overflow distortion. `multicore_lockout_victim_init()` on core1
+enables NMI-based pause for safe flash writes during save.
+
+### Boot sequence (`doom_device_main.c`)
+
+DOS-style boot log: a `stdio_driver_t` captures `printf` output during
+init and renders each line to the LCD with a mini font. Red header bar
+with version, grey text scrolling as subsystems initialize. Disabled
+automatically when `D_DoomLoop` starts.
+
+### Crash diagnostics (`doom_device_main.c`)
+
+- HardFault handler: red screen with faulting PC and LR (look up in
+  `.dis` file)
+- DWT hardware watchpoint infrastructure for memory corruption debugging
+- Blue diagnostic screen (`thumby_crash()`) callable from validation
+  traps anywhere in the codebase
 
 ## Credits
 

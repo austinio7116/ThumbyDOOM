@@ -117,6 +117,10 @@ void doom_font_draw(uint16_t *fb, const char *s, int x, int y, uint16_t c)
 { (void)fb; (void)s; (void)x; (void)y; (void)c; }
 int  doom_font_width(const char *s) { return 0; }
 
+/* --- Symbols the port/vendor code references ------------------------ */
+int boot_active = 0;  /* host skips boot splash */
+void hard_assert(int cond) { (void)cond; }
+
 /* --- main ----------------------------------------------------------- */
 
 int main(int argc, char **argv)
