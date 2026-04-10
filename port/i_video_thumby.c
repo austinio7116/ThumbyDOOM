@@ -15,6 +15,7 @@
 #include "i_system.h"
 #include "i_video.h"
 #include "v_video.h"
+#include "m_random.h"
 
 /* --- globals -------------------------------------------------------- */
 
@@ -139,12 +140,72 @@ extern void doom_lcd_wait_idle(void);
 void thumby_tag(int x, int y, uint16_t color)     { (void)x; (void)y; (void)color; }
 void thumby_tag_ext(int x, int y, uint16_t color) { (void)x; (void)y; (void)color; }
 
+/* --- Classic Doom screen melt (RGB565, 128x128) -------------------- */
 
-/* Present one frame:
- * 1. Composite the 320×200 overlay buffer onto the native 128×128
+static uint16_t wipe_snap[128 * 128];   /* 32 KB old-screen snapshot */
+static int16_t  melt_y[128];            /* per-column drop position   */
+static int      melt_active;
+
+void thumby_melt_start(void)
+{
+    /* Snapshot whatever is currently on the LCD buffer (the old screen). */
+    memcpy(wipe_snap, g_fb, sizeof(wipe_snap));
+
+    /* Classic Doom random-walk initialisation.
+     * Negative values are a delay before the column starts dropping. */
+    melt_y[0] = -(M_Random() % 16);
+    for (int i = 1; i < 128; i++) {
+        int r = (M_Random() % 3) - 1;
+        melt_y[i] = melt_y[i - 1] + r;
+        if (melt_y[i] > 0)    melt_y[i] = 0;
+        if (melt_y[i] == -16)  melt_y[i] = -15;
+    }
+    melt_active = 1;
+}
+
+int thumby_melt_is_active(void) { return melt_active; }
+
+/* Advance column offsets by one tick and composite the old screen
+ * (sliding down) on top of g_fb which already holds the new frame.
+ * Clears melt_active when every column has finished. */
+static void melt_advance_and_composite(void)
+{
+    int done = 1;
+
+    /* --- advance --- */
+    for (int x = 0; x < 128; x++) {
+        if (melt_y[x] < 0) {
+            melt_y[x]++;
+            done = 0;
+        } else if (melt_y[x] < 128) {
+            int dy = (melt_y[x] < 16) ? melt_y[x] + 1 : 8;
+            if (melt_y[x] + dy > 128) dy = 128 - melt_y[x];
+            melt_y[x] += dy;
+            done = 0;
+        }
+    }
+
+    /* --- composite --- */
+    /* For each column the old screen occupies rows  y .. 127,
+     * mapped from old-screen rows  0 .. (127 - y).
+     * Rows 0 .. y-1 already show the new frame. */
+    for (int x = 0; x < 128; x++) {
+        int y = melt_y[x];
+        if (y < 0) y = 0;              /* hasn't started: full old screen */
+        for (int row = y; row < 128; row++) {
+            g_fb[row * 128 + x] = wipe_snap[(row - y) * 128 + x];
+        }
+    }
+
+    if (done) melt_active = 0;
+}
+
+/* --- Present one frame ---------------------------------------------- */
+/* 1. Composite the 320×200 overlay buffer onto the native 128×128
  *    frame_buffer (HUD, menu, intermission text, automap overlays)
  * 2. Palette-LUT the result into RGB565 g_fb
- * 3. Push to LCD */
+ * 3. If melt is active, advance + composite old screen on top
+ * 4. Push to LCD */
 extern void V_CompositeOverlay(uint8_t *dest);
 extern void V_ClearOverlay(void);
 
@@ -163,6 +224,10 @@ static void present_frame(int frame)
     uint16_t *dst = g_fb;
     for (int i = 0; i < SCREENWIDTH * SCREENHEIGHT; i++) {
         dst[i] = palette_rgb565[src[i]];
+    }
+
+    if (melt_active) {
+        melt_advance_and_composite();
     }
 
     doom_lcd_wait_idle();
