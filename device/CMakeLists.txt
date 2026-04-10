@@ -161,13 +161,17 @@ target_compile_definitions(thumbydoom PRIVATE
     USE_LIGHTMAP_INDEXES=1
 
     USE_ERASE_FRAME=1
+    # Classic r_segs column drawers are replaced by pd_render
+    # (PICODOOM_RENDER_NEWHOPE). These compile-time flags remove the
+    # dead classic code paths that reference colfunc/basecolfunc:
     NO_DRAW_MID=1
     NO_DRAW_TOP=1
     NO_DRAW_BOTTOM=1
     NO_DRAW_MASKED=1
     NO_DRAW_SKY=1
-    NO_DRAW_SPRITES=1
-    NO_DRAW_PSPRITES=1
+    # NO_DRAW_SPRITES and NO_DRAW_PSPRITES intentionally NOT set
+    # — those are runtime defaults, not compile guards, and we want
+    # monsters + player weapon visible
 
     NO_VISPLANE_GUTS=1
     NO_VISPLANE_CACHES=1
@@ -271,7 +275,7 @@ target_compile_definitions(thumbydoom PRIVATE
     # top 104 rows.
     SCREENWIDTH=128
     SCREENHEIGHT=128
-    MAIN_VIEWHEIGHT=104
+    MAIN_VIEWHEIGHT=112
     THUMBY_NATIVE=1
     USE_MUSX=1
     MUSX_COMPRESSED=1

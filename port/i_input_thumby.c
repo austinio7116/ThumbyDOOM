@@ -38,19 +38,44 @@
 typedef struct {
     int gpio;
     int doom_key;
+    int doom_key_alt;  /* second key sent on press, or 0 */
 } button_map_t;
 
-/* Mappings — order doesn't matter, just iterate. */
+/* Control map — Thumby Color physical layout → Doom keys.
+ *
+ *   D-pad LEFT/RIGHT  → strafe (',' / '.')
+ *   D-pad UP/DOWN     → forward/back (arrow keys)
+ *   LB                → turn left  (LEFTARROW)
+ *   RB                → turn right (RIGHTARROW)
+ *   A                 → fire (RCTRL)
+ *   B                 → use / open doors (SPACE)
+ *   MENU              → menu / esc
+ *
+ * Doom default key bindings (m_controls.c):
+ *   key_strafeleft  = ','
+ *   key_straferight = '.'
+ *   key_left        = KEY_LEFTARROW
+ *   key_right       = KEY_RIGHTARROW
+ *   key_up          = KEY_UPARROW
+ *   key_down        = KEY_DOWNARROW
+ *   key_fire        = KEY_RCTRL
+ *   key_use         = SPACE
+ *   key_menu_*      = ESC etc.
+ */
+/* A and B each send TWO key events so they work in BOTH gameplay
+ * and the menu/intermission screens, where Doom expects ENTER for
+ * confirm and 'y' for yes-prompts. The "extra" key is harmless in
+ * the other context. */
 static const button_map_t btn_map[] = {
-    { BTN_LEFT_GP,  KEY_LEFTARROW  },
-    { BTN_RIGHT_GP, KEY_RIGHTARROW },
-    { BTN_UP_GP,    KEY_UPARROW    },
-    { BTN_DOWN_GP,  KEY_DOWNARROW  },
-    { BTN_A_GP,     KEY_RCTRL      },  /* fire */
-    { BTN_B_GP,     ' '            },  /* use */
-    { BTN_LB_GP,    KEY_RSHIFT     },  /* run/strafe modifier */
-    { BTN_RB_GP,    KEY_ENTER      },  /* menu confirm; also next weapon via cheat later */
-    { BTN_MENU_GP,  KEY_ESCAPE     },
+    { BTN_LEFT_GP,  KEY_LEFTARROW,  0 },             /* turn left / menu left */
+    { BTN_RIGHT_GP, KEY_RIGHTARROW, 0 },             /* turn right / menu right */
+    { BTN_UP_GP,    KEY_UPARROW,    0 },             /* forward / menu up */
+    { BTN_DOWN_GP,  KEY_DOWNARROW,  0 },             /* back / menu down */
+    { BTN_LB_GP,    ',',            0 },             /* strafe left  */
+    { BTN_RB_GP,    '.',            0 },             /* strafe right */
+    { BTN_A_GP,     KEY_RCTRL,      KEY_ENTER },     /* fire + menu confirm */
+    { BTN_B_GP,     ' ',            'y' },           /* use + yes-confirm */
+    { BTN_MENU_GP,  KEY_ESCAPE,     0 },             /* menu / cancel */
 };
 #define NBTN ((int)(sizeof(btn_map)/sizeof(btn_map[0])))
 
@@ -78,10 +103,14 @@ void I_GetEvent(void)
             if (changed & mask) {
                 event_t ev;
                 ev.type  = (cur & mask) ? ev_keydown : ev_keyup;
-                ev.data1 = btn_map[i].doom_key;
                 ev.data2 = -1;
                 ev.data3 = -1;
+                ev.data1 = btn_map[i].doom_key;
                 D_PostEvent(&ev);
+                if (btn_map[i].doom_key_alt) {
+                    ev.data1 = btn_map[i].doom_key_alt;
+                    D_PostEvent(&ev);
+                }
             }
         }
         prev_state = cur;

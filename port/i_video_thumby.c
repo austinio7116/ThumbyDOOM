@@ -80,24 +80,50 @@ volatile uint8_t interp_in_use;
 
 /* RGB565 palette LUT, populated from PLAYPAL on first SetPaletteNum.
  * pd_render writes 8-bit indices to frame_buffer; we apply this LUT
- * during downsample-to-LCD. */
+ * during scanout to the LCD.
+ *
+ * IMPORTANT: WHD's whd_gen truncates PLAYPAL to a single 768-byte
+ * base palette when the standard shift formulas reproduce all 14
+ * variants (which they do for shareware Doom). So we can ONLY read
+ * palette 0 from the lump — for palnum > 0 we compute the shift in
+ * software using the same formulas whd_gen verified against. */
 static uint16_t palette_rgb565[256];
 static int palette_dirty = 1;
 static int current_pal = 0;
 
 #include "w_wad.h"
 #include "z_zone.h"
+
 static void rebuild_palette(int palnum)
 {
     int lump = W_GetNumForName("PLAYPAL");
-    const uint8_t *pal = (const uint8_t *)W_CacheLumpNum(lump, PU_CACHE);
-    if (!pal) return;
-    pal += palnum * 768;
+    const uint8_t *base = (const uint8_t *)W_CacheLumpNum(lump, PU_CACHE);
+    if (!base) return;
+
+    /* Shift parameters per palette index, matching whd_gen
+     * (palettes 1..8 = pain, 9..12 = pickup, 13 = radsuit). */
+    int sr = 0, sg = 0, sb = 0, shift = 0, steps = 1;
+    if (palnum >= 1 && palnum <= 8) {
+        sr = 255; sg = 0;   sb = 0;   shift = palnum;     steps = 9;
+    } else if (palnum >= 9 && palnum <= 12) {
+        sr = 215; sg = 186; sb = 69;  shift = palnum - 8; steps = 8;
+    } else if (palnum == 13) {
+        sr = 0;   sg = 256; sb = 0;   shift = 1;          steps = 8;
+    }
+
     for (int i = 0; i < 256; i++) {
-        uint8_t r = pal[i*3+0];
-        uint8_t g = pal[i*3+1];
-        uint8_t b = pal[i*3+2];
-        palette_rgb565[i] = ((r & 0xf8) << 8) | ((g & 0xfc) << 3) | (b >> 3);
+        int r = base[i*3+0];
+        int g = base[i*3+1];
+        int b = base[i*3+2];
+        if (palnum != 0) {
+            r += ((sr - r) * shift) / steps;
+            g += ((sg - g) * shift) / steps;
+            b += ((sb - b) * shift) / steps;
+            if (r < 0) r = 0; else if (r > 255) r = 255;
+            if (g < 0) g = 0; else if (g > 255) g = 255;
+            if (b < 0) b = 0; else if (b > 255) b = 255;
+        }
+        palette_rgb565[i] = (uint16_t)(((r & 0xf8) << 8) | ((g & 0xfc) << 3) | (b >> 3));
     }
     palette_dirty = 0;
 }
@@ -108,30 +134,32 @@ extern uint16_t g_fb[128 * 128];
 extern void doom_lcd_present(const uint16_t *fb);
 extern void doom_lcd_wait_idle(void);
 
+/* Diagnostic corner blocks — kept as no-ops so call sites in
+ * vendor sources still link, but they no longer paint anything. */
+void thumby_tag(int x, int y, uint16_t color)     { (void)x; (void)y; (void)color; }
+void thumby_tag_ext(int x, int y, uint16_t color) { (void)x; (void)y; (void)color; }
 
-/* Output framebuffer — handed to doom_lcd_present(). Reused from
- * device/doom_device_main.c global. */
-/* Native path: pd_render writes 8-bit indices straight into a
- * 128x128 frame_buffer. We just palette-LUT to RGB565 into g_fb
- * and push. No downsample, no letterbox. The bottom 24 rows
- * (rows 104..127) are the slim HUD area — pd_render leaves them
- * untouched and our HUD code (TODO) writes into them. */
-static void downsample_present(int frame)
+
+/* Present one frame:
+ * 1. Composite the 320×200 overlay buffer onto the native 128×128
+ *    frame_buffer (HUD, menu, intermission text, automap overlays)
+ * 2. Palette-LUT the result into RGB565 g_fb
+ * 3. Push to LCD */
+extern void V_CompositeOverlay(uint8_t *dest);
+extern void V_ClearOverlay(void);
+
+static void present_frame(int frame)
 {
     if (palette_dirty) rebuild_palette(current_pal);
 
+    /* Composite 2D overlays (rendered at 320×200) onto native fb. */
+    V_CompositeOverlay(frame_buffer[frame]);
+
     const uint8_t *src = frame_buffer[frame];
     uint16_t *dst = g_fb;
-    /* Only copy the 3D view rows (0..MAIN_VIEWHEIGHT). The HUD area
-     * (MAIN_VIEWHEIGHT..SCREENHEIGHT) is overwritten by the slim
-     * HUD draw next. */
-    for (int i = 0; i < SCREENWIDTH * MAIN_VIEWHEIGHT; i++) {
+    for (int i = 0; i < SCREENWIDTH * SCREENHEIGHT; i++) {
         dst[i] = palette_rgb565[src[i]];
     }
-
-    /* Slim HUD into the bottom 24 rows. */
-    extern void thumby_hud_draw(void);
-    thumby_hud_draw();
 
     doom_lcd_wait_idle();
     doom_lcd_present(g_fb);
@@ -177,7 +205,7 @@ void I_FinishUpdate(void)
 {
     if (sem_available(&render_frame_ready)) {
         sem_acquire_blocking(&render_frame_ready);
-        downsample_present(next_frame_index);
+        present_frame(next_frame_index);
         sem_release(&display_frame_freed);
     }
 }

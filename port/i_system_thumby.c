@@ -73,7 +73,15 @@ static void thumby_error_flash(uint16_t color)
 #undef I_Error
 void I_Error(const char *error, ...)
 {
-    (void)error;
+#if !PICO_ON_DEVICE
+    va_list args;
+    va_start(args, error);
+    fprintf(stderr, "I_Error: ");
+    vfprintf(stderr, error, args);
+    fprintf(stderr, "\n");
+    va_end(args);
+    fflush(stderr);
+#endif
     thumby_error_flash(0xF81F); /* magenta — stage 7 */
     for (;;) tight_loop_contents();
 }
@@ -106,17 +114,12 @@ void __wrap_panic_unsupported(void)
     for (;;) tight_loop_contents();
 }
 
+/* Zone heap. Under THUMBY_NATIVE we use full void* shortptrs so
+ * placement is unconstrained — regular BSS. */
+static byte zone[160 * 1024] __attribute__((aligned(4)));
+
 byte *I_ZoneBase(int *size)
 {
-    /* 192 KB zone — bumped from 128 KB to test the OOM hypothesis.
-     * With native 128x128 the renderer's BSS dropped substantially
-     * so we have headroom. RP2350 has 520 KB SRAM total; current
-     * BSS without zone is roughly:
-     *   pd_render statics + frame_buffer[2][128*128]   ~80 KB
-     *   Doom statics + game_pico static state          ~100 KB
-     * → ~180 KB BSS without zone, leaving ~340 KB. 192 KB zone
-     * still leaves ~148 KB for stack + libc heap + late mallocs. */
-    static byte zone[192 * 1024] __attribute__((aligned(4)));
     *size = sizeof(zone);
     return zone;
 }
