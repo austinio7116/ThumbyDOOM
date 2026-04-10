@@ -222,7 +222,13 @@ target_compile_definitions(thumbydoom PRIVATE
     NO_USE_ZLIGHT=1
     NO_Z_ZONE_ID=1
     Z_MALOOC_EXTRA_DATA=1
-    USE_THINKER_POOL=1
+    # USE_THINKER_POOL disabled — a 1-byte corruption at thinker_t
+    # offset 5 (pool_info) causes Z_ThinkFree to follow garbage
+    # block pointers and HardFault. Root cause is an unknown writer
+    # to thinker headers; with pooling off, pool_info is never read
+    # and the corruption is harmless. Memory overhead is ~10 bytes
+    # per mobj (zone header per allocation vs 8-slot pooling).
+    # USE_THINKER_POOL=1
     NO_INTERCEPTS_OVERRUN=1
 
     # --- immutable ---

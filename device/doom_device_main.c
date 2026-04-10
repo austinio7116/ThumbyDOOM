@@ -110,6 +110,87 @@ static stdio_driver_t boot_stdio_driver = {
 #endif
 };
 
+/* --- Hex formatting helper ---------------------------------------- */
+static const char hex_digits[] = "0123456789ABCDEF";
+static void hex_str(char *buf, const char *label, uint32_t val) {
+    int i = 0;
+    while (*label) buf[i++] = *label++;
+    for (int j = 0; j < 8; j++)
+        buf[i++] = hex_digits[(val >> (28 - j * 4)) & 0xF];
+    buf[i] = 0;
+}
+
+/* --- DWT hardware data watchpoint --------------------------------- */
+/* Cortex-M33 has 4 DWT comparators. We use comparator 0 to watch
+ * for writes to a 4-byte region containing a thinker's function and
+ * pool_info (offset 4-7). When the write fires, DebugMonitor_Handler
+ * captures the faulting PC — telling us exactly which instruction
+ * corrupts the thinker header. */
+
+/* DWT and CoreDebug registers — direct addresses to avoid CMSIS
+ * header dependency issues with the Pico SDK. */
+#define DWT_CTRL     (*(volatile uint32_t *)0xE0001000)
+#define DWT_COMP0    (*(volatile uint32_t *)0xE0001020)
+#define DWT_MASK0    (*(volatile uint32_t *)0xE0001024)
+#define DWT_FUNC0    (*(volatile uint32_t *)0xE0001028)
+#define DEMCR        (*(volatile uint32_t *)0xE000EDFC)
+#define DEMCR_TRCENA (1 << 24)
+#define DEMCR_MON_EN (1 << 16)
+
+static volatile uint32_t dwt_watch_addr;
+
+void thumby_dwt_watch(void *thinker_addr)
+{
+    /* Watch the word at thinker+4 (contains function + pool_info). */
+    uint32_t addr = (uint32_t)(uintptr_t)thinker_addr + 4;
+    dwt_watch_addr = addr;
+
+    /* Enable DWT trace and DebugMonitor exception. */
+    DEMCR |= DEMCR_TRCENA | DEMCR_MON_EN;
+
+    /* Comparator 0: data write watchpoint, 4-byte aligned match.
+     * FUNCTION bits: [27:24]=MATCH=0110 (write), [4]=ACTION=1 (debug event) */
+    DWT_COMP0 = addr;
+    DWT_MASK0 = 0;        /* exact match on 4-byte aligned word */
+    DWT_FUNC0 = (0x6 << 24) | (1 << 4);
+}
+
+void __attribute__((naked)) isr_debug_monitor(void) {
+    __asm volatile(
+        "tst   lr, #4          \n"
+        "ite   eq               \n"
+        "mrseq r0, msp          \n"
+        "mrsne r0, psp          \n"
+        "ldr   r1, [r0, #20]   \n"  /* stacked LR */
+        "ldr   r0, [r0, #24]   \n"  /* stacked PC */
+        "b     dwt_fault        \n"
+    );
+}
+
+void __attribute__((used)) dwt_fault(uint32_t pc, uint32_t lr) {
+    /* Disable the watchpoint so we don't re-trigger. */
+    DWT_FUNC0 = 0;
+
+    doom_lcd_wait_idle();
+    fb_fill(0x07E0);  /* green background — distinct from red/blue */
+
+    doom_font_draw_2x(g_fb, "WATCHPOINT", 4, 2, 0x0000);
+
+    char buf[24];
+    hex_str(buf, "PC :", pc);
+    doom_font_draw_2x(g_fb, buf, 4, 22, 0x0000);
+    hex_str(buf, "LR :", lr);
+    doom_font_draw_2x(g_fb, buf, 4, 38, 0x0000);
+    hex_str(buf, "ADR:", dwt_watch_addr);
+    doom_font_draw_2x(g_fb, buf, 4, 54, 0x0000);
+
+    doom_font_draw(g_fb, "look up PC in .dis", 4, 76, 0x0000);
+
+    doom_lcd_present(g_fb);
+    doom_lcd_wait_idle();
+    for (;;) __asm volatile("wfi");
+}
+
 /* --- HardFault handler -------------------------------------------- */
 /* Cortex-M33 pushes {R0,R1,R2,R3,R12,LR,PC,xPSR} on fault.
  * We grab the faulting PC and paint it on the LCD so we can look
@@ -165,14 +246,6 @@ void __attribute__((naked)) isr_hardfault(void) {
 /* --- Generic diagnostic crash screen ------------------------------ */
 /* Callable from anywhere to display up to 4 labelled hex values
  * on a blue screen and halt. Used by validation traps. */
-static const char hex_digits[] = "0123456789ABCDEF";
-static void hex_str(char *buf, const char *label, uint32_t val) {
-    int i = 0;
-    while (*label) buf[i++] = *label++;
-    for (int j = 0; j < 8; j++)
-        buf[i++] = hex_digits[(val >> (28 - j * 4)) & 0xF];
-    buf[i] = 0;
-}
 
 void __attribute__((used)) thumby_crash(
     const char *title,
