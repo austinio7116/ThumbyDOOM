@@ -80,6 +80,10 @@ static const button_map_t btn_map[] = {
 #define NBTN ((int)(sizeof(btn_map)/sizeof(btn_map[0])))
 
 static uint32_t prev_state = 0;  /* bit i = btn_map[i] held */
+static int tab_held = 0;         /* LB+RB combo state for automap */
+
+#define LB_IDX  4
+#define RB_IDX  5
 
 extern void D_PostEvent(event_t *ev);
 
@@ -96,7 +100,25 @@ void I_GetEvent(void)
         if (!gpio_get(btn_map[i].gpio)) cur |= (1u << i);
     }
 
-    uint32_t changed = cur ^ prev_state;
+    /* LB+RB combo → KEY_TAB (automap toggle).
+     * When both are held, suppress individual strafe events
+     * and send TAB instead. */
+    int both_held = (cur & (1u << LB_IDX)) && (cur & (1u << RB_IDX));
+    if (both_held && !tab_held) {
+        event_t ev = { ev_keydown, KEY_TAB, -1, -1 };
+        D_PostEvent(&ev);
+        tab_held = 1;
+        /* Suppress individual LB/RB events this frame. */
+        prev_state |= (1u << LB_IDX) | (1u << RB_IDX);
+    } else if (!both_held && tab_held) {
+        event_t ev = { ev_keyup, KEY_TAB, -1, -1 };
+        D_PostEvent(&ev);
+        tab_held = 0;
+    }
+
+    /* Suppress LB/RB while combo is active. */
+    uint32_t suppress = tab_held ? ((1u << LB_IDX) | (1u << RB_IDX)) : 0;
+    uint32_t changed = (cur ^ prev_state) & ~suppress;
     if (changed) {
         for (int i = 0; i < NBTN; i++) {
             uint32_t mask = 1u << i;

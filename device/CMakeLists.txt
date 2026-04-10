@@ -277,10 +277,8 @@ target_compile_definitions(thumbydoom PRIVATE
     # Costs ~1.3 KB BSS but unlocks native 128x128 rendering.
     FLOOR_CEILING_CLIP_8BIT=1
 
-    # Native 128x128 rendering (overrides defaults in i_video.h
-    # which were patched to be #ifndef-guarded). 24-row slim HUD
-    # area at the bottom (rows 104..127); main view occupies the
-    # top 104 rows.
+    # Native 128x128 rendering. 16-row slim HUD at the bottom;
+    # main 3D view fills the top 112 rows for maximum viewport.
     SCREENWIDTH=128
     SCREENHEIGHT=128
     MAIN_VIEWHEIGHT=112

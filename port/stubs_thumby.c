@@ -25,7 +25,24 @@ boolean net_client_connected = false;
 /* player_name is defined by m_menu.c */
 
 #include "picoflash.h"
+#if PICO_ON_DEVICE
+#include "hardware/flash.h"
+#include "hardware/sync.h"
+#include "pico/multicore.h"
+
+/* Real flash write for save games. The caller (p_saveg.c) already
+ * wraps this in save_and_disable_interrupts(). Core1's audio loop
+ * and ISR are __not_in_flash_func so they're safe during flash ops.
+ *
+ * Erases one 4KB sector, then programs 4KB of data. */
+void picoflash_sector_program(uint32_t flash_offs, const uint8_t *data)
+{
+    flash_range_erase(flash_offs, FLASH_SECTOR_SIZE);
+    flash_range_program(flash_offs, data, FLASH_SECTOR_SIZE);
+}
+#else
 void picoflash_sector_program(uint32_t flash_offs, const uint8_t *data) { }
+#endif
 
 /* opl_pico_driver + OPL_Delay now provided by port/opl_thumby.c */
 
@@ -55,8 +72,7 @@ boolean P_SaveGameWriteFlashSlot(int slot, const uint8_t *buffer, unsigned int s
 }
 #endif
 
-/* Pico SDK assertion helper */
-void hard_assert(int cond) { (void)cond; }
+/* Pico SDK provides hard_assert via pico/assert.h — no stub needed. */
 
 /* I_GetMemoryValue is provided by SDL i_video.c (which we don't compile).
  * It reads a value from a memory address — used for some Doom memory poking. */

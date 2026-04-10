@@ -213,24 +213,66 @@ static void present_frame(int frame)
 {
     if (palette_dirty) rebuild_palette(current_pal);
 
-    /* Composite 2D overlays (HUD, menu) only during gameplay.
-     * Splash/title screens fill the full 128x128 buffer and should
-     * not have overlays painted on top.
-     *
-     * During gameplay, clear the status-bar rows first — the 3D
-     * renderer only writes rows 0..MAIN_VIEWHEIGHT-1, so the HUD
-     * area retains stale data from a previous frame. Without this
-     * clear, double-buffering causes the HUD to flicker. */
+    /* Palette-LUT the 3D view into RGB565 g_fb. During gameplay,
+     * clear the HUD rows first (3D renderer only writes rows
+     * 0..MAIN_VIEWHEIGHT-1; stale data causes flicker). */
     if (next_video_type == 3) { /* VIDEO_TYPE_DOUBLE = gameplay */
         memset(frame_buffer[frame] + MAIN_VIEWHEIGHT * SCREENWIDTH, 0,
                (SCREENHEIGHT - MAIN_VIEWHEIGHT) * SCREENWIDTH);
-        V_CompositeOverlay(frame_buffer[frame]);
     }
 
     const uint8_t *src = frame_buffer[frame];
     uint16_t *dst = g_fb;
     for (int i = 0; i < SCREENWIDTH * SCREENHEIGHT; i++) {
         dst[i] = palette_rgb565[src[i]];
+    }
+
+    /* Composite 2D overlay (HUD + menu) with 2×2 box-filter blend.
+     * The overlay is 320×200 8-bit indexed; we downsample to 128×128
+     * RGB565 with a 4-pixel average for smooth text/HUD.
+     *
+     * Y mapping uses two zones so the STBAR has correct aspect ratio:
+     *   Dest 0..MAIN_VIEWHEIGHT-1   ← Source 0..167  (menu/text area)
+     *   Dest MAIN_VIEWHEIGHT..127    ← Source 168..199 (STBAR, 32 rows)
+     * X mapping is uniform: 320 → 128 (scale 0.4).
+     * The STBAR Y scale (32→12 = 0.375) matches X (0.4) closely,
+     * giving correct face aspect with no vertical stretching.
+     *
+     * Only during gameplay — splash screens should be clean. */
+#define STBAR_SRC_TOP 168
+#define STBAR_SRC_H   32
+#define HUD_H         (SCREENHEIGHT - MAIN_VIEWHEIGHT)
+    if (next_video_type == 3) {
+        extern uint8_t v_overlay_buf[];
+        for (int dy = 0; dy < SCREENHEIGHT; dy++) {
+            int sy;
+            if (dy < MAIN_VIEWHEIGHT) {
+                sy = (dy * STBAR_SRC_TOP) / MAIN_VIEWHEIGHT;
+            } else {
+                sy = STBAR_SRC_TOP + ((dy - MAIN_VIEWHEIGHT) * STBAR_SRC_H) / HUD_H;
+            }
+            int sy1 = sy + 1; if (sy1 >= 200) sy1 = 199;
+            const uint8_t *row0 = v_overlay_buf + sy  * 320;
+            const uint8_t *row1 = v_overlay_buf + sy1 * 320;
+            for (int dx = 0; dx < SCREENWIDTH; dx++) {
+                int sx = (dx * 320) / SCREENWIDTH;
+                int sx1 = sx + 1; if (sx1 >= 320) sx1 = 319;
+                uint8_t p00 = row0[sx],  p01 = row0[sx1];
+                uint8_t p10 = row1[sx],  p11 = row1[sx1];
+                if (!(p00 | p01 | p10 | p11)) continue;
+                uint16_t c00 = palette_rgb565[p00];
+                uint16_t c01 = palette_rgb565[p01];
+                uint16_t c10 = palette_rgb565[p10];
+                uint16_t c11 = palette_rgb565[p11];
+                int cnt = (p00?1:0) + (p01?1:0) + (p10?1:0) + (p11?1:0);
+                uint32_t r = 0, g = 0, b = 0;
+                if (p00) { r += (c00>>11); g += ((c00>>5)&0x3f); b += (c00&0x1f); }
+                if (p01) { r += (c01>>11); g += ((c01>>5)&0x3f); b += (c01&0x1f); }
+                if (p10) { r += (c10>>11); g += ((c10>>5)&0x3f); b += (c10&0x1f); }
+                if (p11) { r += (c11>>11); g += ((c11>>5)&0x3f); b += (c11&0x1f); }
+                g_fb[dy * 128 + dx] = ((r/cnt)<<11) | ((g/cnt)<<5) | (b/cnt);
+            }
+        }
     }
 
     if (melt_active) {
