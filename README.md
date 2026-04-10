@@ -9,14 +9,18 @@ melts — the real deal on a 128x128 screen.
 
 ## Quick Start
 
+**Warning:** Flashing this firmware **replaces the entire Thumby Color
+operating system**. Your existing games, saves, and settings will be
+erased. To restore normal functionality afterwards, re-flash the
+standard Thumby Color firmware from
+[thumby.us](https://color.thumby.us/pages/firmware-and-updating/firmware-and-updating/)
+and re-upload your games.
+
 1. Download **`thumbydoom.uf2`** from this repo
 2. Turn off your Thumby Color
 3. Hold **DOWN** on the d-pad while turning it on (enters flash mode)
 4. Drag the `.uf2` file onto the **RPI-RP2350** USB drive that appears
 5. The device reboots and DOOM starts
-
-To go back to normal Thumby Color firmware, repeat steps 2-4 with
-the standard Thumby Color firmware `.uf2` file.
 
 ## How to Play
 
