@@ -14,6 +14,7 @@
 #include <string.h>
 
 #include "pico/stdlib.h"
+#include "pico/stdio/driver.h"
 #include "hardware/clocks.h"
 
 #include "doom_lcd_gc9107.h"
@@ -29,16 +30,85 @@ static void fb_fill(uint16_t c) {
     for (int i = 0; i < 128 * 128; i++) g_fb[i] = c;
 }
 
-static void boot_splash(void) {
-    fb_fill(0x0000);
-    doom_font_draw(g_fb, "ThumbyDOOM",  24, 40, 0xF800); /* red */
-    doom_font_draw(g_fb, "v0.1",        48, 52, 0xFFFF);
-    doom_font_draw(g_fb, "shareware",   32, 72, 0xC618);
-    doom_font_draw(g_fb, "GPLv2",       44, 100, 0x4208);
+/* --- DOS-style boot log ------------------------------------------ */
+/* Real init messages are routed here via boot_printf() which Doom's
+ * startup code calls through our __wrap_printf. Lines scroll up
+ * when the screen fills. Header bar stays pinned at top. */
+
+#define DOS_WHITE  0xB596   /* DOS light grey */
+#define DOS_RED_BG 0xA800   /* dark red header */
+#define BOOT_LINE_H  7
+#define BOOT_TOP      10     /* first text line y (below header) */
+#define BOOT_MAX_Y    (128 - BOOT_LINE_H)
+
+static int  boot_y = BOOT_TOP;
+int  boot_active = 1;    /* cleared once D_DoomMain reaches game loop */
+
+void boot_printf(const char *text)
+{
+    if (!boot_active) return;
+
+    /* Scroll if we've hit the bottom. */
+    if (boot_y > BOOT_MAX_Y) {
+        /* Shift framebuffer up by one line height. */
+        int header_px = BOOT_TOP * 128;
+        int shift = BOOT_LINE_H * 128;
+        int body = 128 * 128 - header_px - shift;
+        for (int i = 0; i < body; i++)
+            g_fb[header_px + i] = g_fb[header_px + shift + i];
+        /* Clear the new bottom line. */
+        for (int i = header_px + body; i < 128 * 128; i++)
+            g_fb[i] = 0x0000;
+        boot_y = BOOT_MAX_Y;
+    }
+
+    doom_font_draw(g_fb, text, 2, boot_y, DOS_WHITE);
+    boot_y += BOOT_LINE_H;
     doom_lcd_present(g_fb);
     doom_lcd_wait_idle();
-    sleep_ms(1200);
 }
+
+static void boot_splash(void) {
+    fb_fill(0x0000);
+
+    /* Red header bar — pinned at top. */
+    for (int py = 0; py < 8; py++)
+        for (int px = 0; px < 128; px++)
+            g_fb[py * 128 + px] = DOS_RED_BG;
+    doom_font_draw(g_fb, "DOOM System Startup v1.666", 2, 1, 0xFFFF);
+    doom_lcd_present(g_fb);
+    doom_lcd_wait_idle();
+}
+
+/* --- Boot log capture --------------------------------------------- */
+/* Doom's DEH_printf → printf → pico_stdio → putchar_raw. We
+ * accumulate characters into a line buffer and flush to the LCD
+ * on newline. Called from boot_putchar installed as a stdio driver. */
+
+static char  boot_linebuf[48];
+static int   boot_linepos;
+
+static void boot_stdio_out(const char *buf, int len) {
+    if (!boot_active) return;
+    for (int i = 0; i < len; i++) {
+        char c = buf[i];
+        if (c == '\n' || boot_linepos >= (int)sizeof(boot_linebuf) - 1) {
+            boot_linebuf[boot_linepos] = 0;
+            if (boot_linepos > 0) boot_printf(boot_linebuf);
+            boot_linepos = 0;
+        } else if (c >= ' ') {
+            boot_linebuf[boot_linepos++] = c;
+        }
+    }
+}
+
+static stdio_driver_t boot_stdio_driver = {
+    .out_chars = boot_stdio_out,
+    .in_chars  = NULL,
+#if PICO_STDIO_ENABLE_CRLF_SUPPORT
+    .crlf_enabled = false,
+#endif
+};
 
 /* --- HardFault handler -------------------------------------------- */
 /* Cortex-M33 pushes {R0,R1,R2,R3,R12,LR,PC,xPSR} on fault.
@@ -92,6 +162,42 @@ void __attribute__((naked)) isr_hardfault(void) {
     );
 }
 
+/* --- Generic diagnostic crash screen ------------------------------ */
+/* Callable from anywhere to display up to 4 labelled hex values
+ * on a blue screen and halt. Used by validation traps. */
+static const char hex_digits[] = "0123456789ABCDEF";
+static void hex_str(char *buf, const char *label, uint32_t val) {
+    int i = 0;
+    while (*label) buf[i++] = *label++;
+    for (int j = 0; j < 8; j++)
+        buf[i++] = hex_digits[(val >> (28 - j * 4)) & 0xF];
+    buf[i] = 0;
+}
+
+void __attribute__((used)) thumby_crash(
+    const char *title,
+    uint32_t v0, uint32_t v1, uint32_t v2, uint32_t v3)
+{
+    doom_lcd_wait_idle();
+    fb_fill(0x0010);  /* dark blue background */
+    char buf[24];
+
+    doom_font_draw_2x(g_fb, title, 4, 2, 0xF800);
+
+    hex_str(buf, "THK:", v0);
+    doom_font_draw_2x(g_fb, buf, 4, 22, 0xFFFF);
+    hex_str(buf, "PI :", v1);
+    doom_font_draw_2x(g_fb, buf, 4, 38, 0xFFFF);
+    hex_str(buf, "BLK:", v2);
+    doom_font_draw_2x(g_fb, buf, 4, 54, 0xFFFF);
+    hex_str(buf, "SZ :", v3);
+    doom_font_draw_2x(g_fb, buf, 4, 70, 0xFFFF);
+
+    doom_lcd_present(g_fb);
+    doom_lcd_wait_idle();
+    for (;;) __asm volatile("wfi");
+}
+
 /* Forward decl — provided by port/i_main_thumby.c which in turn
  * calls Doom's D_DoomMain(). */
 extern void thumby_doom_main(void);
@@ -102,6 +208,7 @@ int main(void) {
     set_sys_clock_khz(250000, true);
 
     stdio_init_all();
+    stdio_set_driver_enabled(&boot_stdio_driver, true);
 
     doom_lcd_init();
     doom_buttons_init();

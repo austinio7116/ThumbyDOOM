@@ -185,6 +185,10 @@ static boolean init_channel_for_sfx(channel_t *ch, const sfxinfo_t *sfxinfo, int
 
 static void mix_audio(int16_t *out, int n_samples)
 {
+    /* Wide accumulator — avoids int16 wraparound when music + multiple
+     * SFX channels overlap.  Clamped to int16 at the end. */
+    int32_t mix[MIX_BUFFER_SAMPLES];
+
     /* --- Music (OPL2) at 49716 Hz → downsample to 22050 Hz --- */
     if (music_generator) {
         /* Generate OPL at its native rate into a temp stereo buffer. */
@@ -198,17 +202,16 @@ static void mix_audio(int16_t *out, int n_samples)
         fake_audio_t fa = { .buffer = &fb, .max_sample_count = opl_n, .sample_count = 0 };
         music_generator((void *)&fa);
 
-        /* Downsample 49716→22050 via nearest-neighbor + stereo→mono.
-         * Music volume: attenuate by >>2 so SFX can be heard. */
+        /* Downsample 49716→22050 via nearest-neighbor + stereo→mono. */
         for (int i = 0; i < n_samples; i++) {
             int si = (i * opl_n) / n_samples;
             if (si >= opl_n) si = opl_n - 1;
             int l = opl_stereo[si * 2];
             int r = opl_stereo[si * 2 + 1];
-            out[i] = (int16_t)(((l + r) / 2) >> 1);
+            mix[i] = (l + r) / 2;
         }
     } else {
-        memset(out, 0, n_samples * sizeof(int16_t));
+        memset(mix, 0, n_samples * sizeof(int32_t));
     }
 
     /* --- SFX channels (already resampled via step field) --- */
@@ -228,8 +231,7 @@ static void mix_audio(int16_t *out, int n_samples)
 #else
             sample = (beta256 * sample + alpha256 * c->decompressed[c->offset >> 16]) / 256;
 #endif
-            /* SFX gain: boost by <<2 so effects are audible over music */
-            out[s] += (int16_t)((sample * vol));
+            mix[s] += sample * vol;
             c->offset += c->step;
             if (c->offset >= offset_end) {
                 c->offset -= offset_end;
@@ -241,6 +243,14 @@ static void mix_audio(int16_t *out, int n_samples)
                 }
             }
         }
+    }
+
+    /* Clamp int32 accumulator → int16 output. */
+    for (int i = 0; i < n_samples; i++) {
+        int32_t s = mix[i];
+        if (s > 32767)  s = 32767;
+        if (s < -32768) s = -32768;
+        out[i] = (int16_t)s;
     }
 
     /* Fade */
