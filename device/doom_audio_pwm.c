@@ -24,8 +24,8 @@
 #define AUDIO_PWM_PIN     23
 #define AUDIO_ENABLE_PIN  20
 #define TIMER_SLICE        4
-#define SAMPLE_RATE     22050
-#define PWM_WRAP          1024  /* 10-bit DAC — more headroom */
+#define SAMPLE_RATE     49716  /* match OPL native rate */
+#define PWM_WRAP          4096  /* 12-bit DAC — lower quantization noise */
 
 /* Ring buffer: ~3 frames @ 30 fps worth of samples = 2205 frames.
  * Round up to a power of 2 for fast wrap. */
@@ -47,9 +47,19 @@ static void __isr __not_in_flash_func(audio_irq) (void) {
         s = ring[t & RING_MASK];
         ring_tail = t + 1;
     }
-    /* Map int16 [-32768..32767] → uint [0..PWM_WRAP-1].
-     * Bias by half so silence sits in the middle of the swing. */
-    int v = ((int)s + 32768) >> 6;        /* /64 → ~1023 max */
+    /* Triangular dither: two uniform random values summed give a
+     * triangular PDF. Decorrelates quantization noise → white noise
+     * instead of metallic shimmer on sustained tones. */
+    static uint32_t dither_rng = 1;
+    dither_rng = dither_rng * 1103515245u + 12345u;
+    int d1 = (int)(dither_rng >> 20) & 0x1F;  /* 0..31 */
+    dither_rng = dither_rng * 1103515245u + 12345u;
+    int d2 = (int)(dither_rng >> 20) & 0x1F;
+    int dither = d1 + d2 - 31;  /* triangular, centered at 0, range ±31 */
+
+    /* Map int16 [-32768..32767] → uint [0..PWM_WRAP-1] with dither.
+     * 12-bit: >>4 maps 65536 → 4096. */
+    int v = ((int)s + 32768 + dither) >> 4;
     if (v < 0) v = 0;
     if (v >= PWM_WRAP) v = PWM_WRAP - 1;
     pwm_set_gpio_level(AUDIO_PWM_PIN, (uint32_t)v);

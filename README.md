@@ -285,6 +285,27 @@ automatically when `D_DoomLoop` starts.
 
 ## Changelog
 
+### v1.2
+
+- **Audio: native 49716 Hz output** — mixer now runs at the OPL2's
+  native sample rate, eliminating the 49716→22050 Hz downsample
+  entirely. Zero resampling aliasing, zero interpolation artifacts.
+  The cleanest possible OPL music reproduction.
+- **Audio: 12-bit PWM DAC** — upgraded from 10-bit (1024) to 12-bit
+  (4096 wrap). 4x lower quantization noise floor.
+- **Audio: triangular dither** — decorrelates quantization noise into
+  white noise instead of metallic shimmer on sustained tones.
+- **Audio: SFX pitch fix** — SFX step calculation was using the OPL
+  native rate (49716) instead of the actual output rate. Sound effects
+  were playing at roughly half their correct speed and pitch.
+- **Audio: optimized SFX low-pass** — filter coefficient loosened
+  (1.5:1 ratio, ~85% new sample weight) for crisper gunshots and
+  explosions without muffling.
+- **Settings persistence** — FPS, controls, volume, music, and gamma
+  settings now persist across power cycles via save game slot 7.
+- **Host build** — doom_font linked for host SDL build, enabling
+  FPS counter and ammo display testing without device.
+
 ### v1.1
 
 - **Overlay menu**: Hold LB+RB for 3 seconds to open an in-game

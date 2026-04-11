@@ -213,7 +213,7 @@ static void OPL_Thumby_Mix(void *audio_buffer_raw)
         AdvanceTime(nsamples);
     }
 
-    /* Apply gain (<<3) matching vendor. */
+    /* Apply gain (<<3 = ×8) matching vendor. */
     int16_t *samples = (int16_t *)ab->buffer->bytes;
     for (unsigned int i = 0; i < buffer_samples * 2; i++) {
         samples[i] <<= 3;

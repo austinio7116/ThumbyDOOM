@@ -112,10 +112,8 @@ void doom_audio_pwm_init(void)      { }
 void doom_audio_pwm_push(const int16_t *s, int n) { (void)s; (void)n; }
 int  doom_audio_pwm_room(void)      { return 4096; }
 
-/* --- font stub (device draws boot splash with this) --------------- */
-void doom_font_draw(uint16_t *fb, const char *s, int x, int y, uint16_t c)
-{ (void)fb; (void)s; (void)x; (void)y; (void)c; }
-int  doom_font_width(const char *s) { return 0; }
+/* --- font (shared with device) ------------------------------------- */
+/* doom_font.c is compiled into the host build via CMakeLists. */
 
 /* --- Symbols the port/vendor code references ------------------------ */
 int boot_active = 0;  /* host skips boot splash */

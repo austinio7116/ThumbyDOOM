@@ -88,6 +88,7 @@ set(DOOM_PORT_SRC
 
 add_executable(thumbydoom_host
     ${HOST}/host_main.c
+    ${CMAKE_CURRENT_LIST_DIR}/../device/doom_font.c
     ${DOOM_PORT_SRC}
     ${DOOM_COMMON_SRC}
     ${DOOM_GAME_SRC}
@@ -104,6 +105,7 @@ target_include_directories(thumbydoom_host BEFORE PRIVATE
 )
 target_include_directories(thumbydoom_host PRIVATE
     ${PORT}
+    ${CMAKE_CURRENT_LIST_DIR}/../device
     ${VSRC}
     ${VDOOM}
     ${VENDOR}/textscreen

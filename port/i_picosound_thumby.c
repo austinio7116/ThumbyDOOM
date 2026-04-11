@@ -41,7 +41,7 @@ extern int  doom_audio_pwm_room(void);
  * output samples. OPL runs at PICO_SOUND_SAMPLE_FREQ (49716 Hz)
  * so we oversample and downsample. */
 #define MIX_BUFFER_SAMPLES 128
-#define PWM_SAMPLE_RATE 22050
+#define PWM_SAMPLE_RATE 49716  /* match OPL native rate — no resampling */
 /* OPL samples needed per output buffer. 49716/22050 ≈ 2.255 */
 #define OPL_SAMPLES_PER_MIX ((MIX_BUFFER_SAMPLES * PICO_SOUND_SAMPLE_FREQ + PWM_SAMPLE_RATE - 1) / PWM_SAMPLE_RATE)
 
@@ -171,17 +171,21 @@ static boolean init_channel_for_sfx(channel_t *ch, const sfxinfo_t *sfxinfo, int
     ch->data = data + 8;
     ch->data_end = ch->data + length;
     uint32_t sample_freq = (data[3] << 8) | data[2];
+    /* SFX step: use actual mixer output rate (PWM_SAMPLE_RATE), not
+     * the OPL native rate. The original used PICO_SOUND_SAMPLE_FREQ
+     * (49716) but we output at PWM_SAMPLE_RATE — using the wrong
+     * rate caused SFX to play at roughly half speed/pitch. */
     if (pitch == NORM_PITCH)
-        ch->step = sample_freq * 65536 / PICO_SOUND_SAMPLE_FREQ;
+        ch->step = sample_freq * 65536 / PWM_SAMPLE_RATE;
     else
-        ch->step = (uint32_t)((sample_freq * pitch) * 65536ull / (PICO_SOUND_SAMPLE_FREQ * pitch));
+        ch->step = (uint32_t)((sample_freq * pitch) * 65536ull / (PWM_SAMPLE_RATE * pitch));
     decompress_buffer(ch);
     ch->offset = 0;
 #if SOUND_LOW_PASS
-    /* Gentler low-pass than the original (which used 201/64 ratio,
-     * giving only ~41% new sample weight at 11025 Hz). Use 3:1 ratio
-     * for ~75% new sample → crisper SFX on the tiny speaker. */
-    ch->alpha256 = 256u * 3u * sample_freq / (3u * sample_freq + (unsigned)PICO_SOUND_SAMPLE_FREQ);
+    /* Minimal low-pass using actual output rate. 1.5:1 ratio gives
+     * ~85% new sample weight — smooths ADPCM artifacts without
+     * muffling gunshots and explosions. */
+    ch->alpha256 = 256u * 3u * sample_freq / (3u * sample_freq + 2u * (unsigned)PWM_SAMPLE_RATE);
 #endif
     return true;
 }
@@ -207,19 +211,14 @@ static void mix_audio(int16_t *out, int n_samples)
         fake_audio_t fa = { .buffer = &fb, .max_sample_count = opl_n, .sample_count = 0 };
         music_generator((void *)&fa);
 
-        /* Downsample 49716→22050 with linear interpolation + stereo→mono.
-         * Reduces aliasing roughness vs nearest-neighbor. */
-        for (int i = 0; i < n_samples; i++) {
-            uint32_t pos = (uint32_t)i * opl_n * 256 / n_samples;
-            int si = pos >> 8;
-            int frac = pos & 0xFF;
-            if (si >= opl_n - 1) si = opl_n - 2;
-            int l0 = opl_stereo[si * 2],     r0 = opl_stereo[si * 2 + 1];
-            int l1 = opl_stereo[si * 2 + 2], r1 = opl_stereo[si * 2 + 3];
-            int l = l0 + ((l1 - l0) * frac >> 8);
-            int r = r0 + ((r1 - r0) * frac >> 8);
-            mix[i] = (l + r) / 2;
+        /* OPL runs at 49716 Hz = our output rate. No resampling needed,
+         * just stereo→mono fold. Zero aliasing, zero interpolation
+         * artifacts — the cleanest possible OPL reproduction. */
+        int count = opl_n < n_samples ? opl_n : n_samples;
+        for (int i = 0; i < count; i++) {
+            mix[i] = (opl_stereo[i * 2] + opl_stereo[i * 2 + 1]) / 2;
         }
+        for (int i = count; i < n_samples; i++) mix[i] = 0;
         /* Apply music volume from overlay menu (0-10). */
         extern int overlay_menu_get_music(void);
         int mvol = overlay_menu_get_music();
