@@ -514,6 +514,10 @@ void D_RunFrame()
 
     TryRunTics (); // will run at least one tic
 
+#if THUMBY_NATIVE
+    { extern void overlay_menu_flush_settings(void); overlay_menu_flush_settings(); }
+#endif
+
     S_UpdateSounds (players[consoleplayer].mo);// move positional sounds
 
     // Update display, next frame, with current state if no profiling is on

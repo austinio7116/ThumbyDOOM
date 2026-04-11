@@ -76,12 +76,83 @@ static int  cursor;
 static int  scroll_top;
 static uint16_t backdrop[FB_W * FB_H];
 
-/* Settings (persisted in menu_values, applied live) */
+/* Settings values (declared early for persistence functions) */
 static int val_show_fps;
-static int val_controls;    /* 0=classic, 1=southpaw */
+static int val_controls;
 static int val_volume = 8;
 static int val_music  = 8;
 static int val_gamma;
+
+/* --- Settings persistence ----------------------------------------- */
+/* Uses the EXISTING picoflash_sector_program (unchanged) which is
+ * proven to work for save games. Settings write is deferred to the
+ * normal game loop so it runs in the same context as save games. */
+
+#define SETTINGS_MAGIC  0x444F4F4D  /* 'DOOM' */
+/* Use end-of-flash minus 2 sectors — same flash region as save games.
+ * Save markers live in the LAST sector; we use the one before it. */
+extern const uint8_t *get_end_of_flash(void);
+#define SETTINGS_OFFS  ((uint32_t)((uintptr_t)get_end_of_flash() - XIP_BASE - 2 * 4096))
+
+#if PICO_ON_DEVICE
+#include "hardware/flash.h"
+#include "hardware/sync.h"
+#endif
+
+typedef struct {
+    uint32_t magic;
+    uint8_t  show_fps, controls, volume, music, gamma;
+    uint8_t  _pad[3];
+} settings_t;
+
+static int settings_dirty;   /* 1 = needs writing on next game frame */
+static int settings_loaded;
+
+#if PICO_ON_DEVICE
+static void load_settings(void) {
+    /* Read settings from save slot 7 via the save game system. */
+    extern void P_SaveGameGetExistingFlashSlotAddresses(void *, int);
+    typedef struct { const uint8_t *data; int size; } flash_slot_info_t;
+    flash_slot_info_t slots[8];
+    P_SaveGameGetExistingFlashSlotAddresses(slots, 8);
+    if (!slots[7].data || slots[7].size < (int)sizeof(settings_t))
+        return;
+    const settings_t *s = (const settings_t *)slots[7].data;
+    if (s->magic == SETTINGS_MAGIC) {
+        val_show_fps = s->show_fps;
+        val_controls = s->controls;
+        val_volume   = s->volume <= 20 ? s->volume : 8;
+        val_music    = s->music  <= 20 ? s->music  : 8;
+        val_gamma    = s->gamma  <=  4 ? s->gamma  : 0;
+        extern isb_int8_t usegamma;
+        extern int palette_dirty;
+        usegamma = val_gamma;
+        palette_dirty = 1;
+    }
+}
+
+static void write_settings(void) {
+    extern void picoflash_sector_program(uint32_t, const uint8_t *);
+    uint8_t buf[4096];
+    memset(buf, 0xFF, sizeof(buf));
+    settings_t *s = (settings_t *)buf;
+    s->magic    = SETTINGS_MAGIC;
+    s->show_fps = val_show_fps;
+    s->controls = val_controls;
+    s->volume   = val_volume;
+    s->music    = val_music;
+    s->gamma    = val_gamma;
+    /* Match save game calling convention exactly:
+     * interrupts disabled BEFORE picoflash_sector_program. */
+    uint32_t ints = save_and_disable_interrupts();
+    picoflash_sector_program(SETTINGS_OFFS, buf);
+    restore_interrupts(ints);
+}
+#else
+static void load_settings(void) {}
+static void write_settings(void) {}
+#endif
+
 static int val_godmode;
 static int val_weapons;
 static int val_noclip;
@@ -208,6 +279,13 @@ static uint32_t now_ms(void) {
 
 void overlay_menu_check(uint32_t cur, uint32_t lb_mask, uint32_t rb_mask)
 {
+    if (!settings_loaded) {
+        load_settings();
+        settings_loaded = 1;
+    }
+
+    /* settings_dirty is flushed from D_RunFrame after TryRunTics. */
+
     if (menu_open) return;
 
     int both = (cur & lb_mask) && (cur & rb_mask);
@@ -387,6 +465,7 @@ void overlay_menu_input(uint32_t cur, uint32_t prev)
     if ((pressed & (1u << BI_B)) || (pressed & (1u << BI_MENU))) {
         menu_open = 0;
         apply_cheats();
+        settings_dirty = 1;
         drain_event_queue();
         return;
     }
@@ -423,15 +502,43 @@ void overlay_menu_input(uint32_t cur, uint32_t prev)
             if (it->action_id == ACT_RESUME) {
                 menu_open = 0;
                 apply_cheats();
+                settings_dirty = 1;
                 drain_event_queue();
             } else if (it->action_id == ACT_WARP) {
                 menu_open = 0;
                 apply_cheats();
+                settings_dirty = 1;
                 drain_event_queue();
                 G_DeferedInitNew(gameskill, val_warp_ep + 1, val_warp_map + 1, false);
             }
         }
     }
+}
+
+/* Called from D_RunFrame after TryRunTics. Uses the EXACT same
+ * save game flash path (P_SaveGameWriteFlashSlot) that works. */
+void overlay_menu_flush_settings(void) {
+#if PICO_ON_DEVICE
+    if (settings_dirty) {
+        settings_t s;
+        s.magic    = SETTINGS_MAGIC;
+        s.show_fps = val_show_fps;
+        s.controls = val_controls;
+        s.volume   = val_volume;
+        s.music    = val_music;
+        s.gamma    = val_gamma;
+
+        /* Use save game slot 7 (past the 6 user slots) via the
+         * exact P_SaveGameWriteFlashSlot path that save games use. */
+        extern boolean P_SaveGameWriteFlashSlot(int, const uint8_t *, unsigned int, uint8_t *);
+        extern uint8_t *pd_get_work_area(uint32_t *);
+        uint32_t wa_size;
+        uint8_t *buf4k = pd_get_work_area(&wa_size);
+        P_SaveGameWriteFlashSlot(7, (const uint8_t *)&s, sizeof(s), buf4k);
+
+        settings_dirty = 0;
+    }
+#endif
 }
 
 /* --- FPS counter (drawn in present_frame when enabled) --- */
