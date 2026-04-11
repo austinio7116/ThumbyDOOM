@@ -83,6 +83,7 @@ dimmed game view. Navigate with the **d-pad**, adjust values with
 | Warp Episode | Choice 1-4 | Select episode for level warp |
 | Warp Map | Choice 1-9 | Select map for level warp |
 | Warp Now! | Action | Warp to the selected level |
+| Battery | Info | Percentage + voltage with progress bar |
 
 ## Features
 
@@ -284,6 +285,12 @@ automatically when `D_DoomLoop` starts.
   traps anywhere in the codebase
 
 ## Changelog
+
+### v1.2.1
+
+- **Battery indicator** in overlay menu — shows percentage, voltage,
+  and green/grey progress bar. ADC warmed up at boot for accurate
+  first read (RP2350 pipeline fix from ThumbyNES).
 
 ### v1.2
 

@@ -360,6 +360,7 @@ target_link_libraries(thumbydoom PRIVATE
     hardware_gpio
     hardware_pwm
     hardware_irq
+    hardware_adc
     hardware_flash
     hardware_sync
     hardware_i2c

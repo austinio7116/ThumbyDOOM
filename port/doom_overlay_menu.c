@@ -26,6 +26,60 @@ extern int doom_font_width(const char *text);
 /* --- Doom state we read/write --- */
 #include "doom/g_game.h"
 
+/* --- Battery measurement ------------------------------------------ */
+/* Matches ThumbyNES nes_battery.c — GPIO29/ADC3, 1:2 voltage divider.
+ * First ADC read after channel switch is discarded (RP2350 pipeline
+ * returns the previously-selected channel's sample). */
+#if PICO_ON_DEVICE
+#include "hardware/adc.h"
+#define BATT_GPIO    29
+#define BATT_ADC_CH  3
+#define ADC_REF      3.3f
+#define ADC_MAX      4095.0f
+#define HALF_MIN_V   1.45f  /* ~2.9V cell = 0% */
+#define HALF_MAX_V   1.85f  /* ~3.7V cell = 100% */
+
+static int batt_adc_inited;
+
+static void batt_init(void) {
+    if (!batt_adc_inited) {
+        adc_init();
+        adc_gpio_init(BATT_GPIO);
+        adc_select_input(BATT_ADC_CH);
+        /* Warm up: discard several reads for ADC settling after init. */
+        (void)adc_read();
+        (void)adc_read();
+        (void)adc_read();
+        batt_adc_inited = 1;
+    }
+}
+
+static float batt_half_voltage(void) {
+    batt_init();
+    adc_select_input(BATT_ADC_CH);
+    /* Discard first read after channel switch — RP2350 ADC pipeline
+     * returns the previously-selected channel's in-flight sample. */
+    (void)adc_read();
+    return (float)adc_read() * ADC_REF / ADC_MAX;
+}
+
+static int batt_percent(void) {
+    float h = batt_half_voltage();
+    if (h <= HALF_MIN_V) return 0;
+    if (h >= HALF_MAX_V) return 100;
+    int pct = (int)((h - HALF_MIN_V) / (HALF_MAX_V - HALF_MIN_V) * 100.0f + 0.5f);
+    if (pct < 0) pct = 0;
+    if (pct > 100) pct = 100;
+    return pct;
+}
+
+static float batt_voltage(void) {
+    return 2.0f * batt_half_voltage();
+}
+#endif
+
+static char batt_text[16];  /* "95% 3.85V" or "CHRG 4.15V" */
+
 /* --- Colours (RGB565) --- */
 #define COL_ORANGE  0xFD20
 #define COL_GREEN   0x07E0
@@ -52,6 +106,7 @@ typedef enum {
     MI_SLIDER,
     MI_CHOICE,
     MI_SEPARATOR,
+    MI_INFO,        /* non-interactive display text */
 } mi_kind_t;
 
 typedef struct {
@@ -167,6 +222,7 @@ static const char *map_choices[] = { "1","2","3","4","5","6","7","8","9" };
 /* --- Menu items definition --- */
 static menu_item_t items[] = {
     { MI_ACTION,    "Resume",       NULL,           0, 0,  NULL, 0, ACT_RESUME },
+    { MI_INFO,      "Battery",      NULL,           0, 0,  NULL, 0, 0 },
     { MI_SEPARATOR, NULL,           NULL,           0, 0,  NULL, 0, 0 },
     { MI_TOGGLE,    "Show FPS",     &val_show_fps,  0, 1,  NULL, 0, 0 },
     { MI_CHOICE,    "Controls",     &val_controls,  0, 1,  ctrl_choices, 2, 0 },
@@ -187,7 +243,7 @@ static menu_item_t items[] = {
 /* --- Helpers --- */
 
 static int is_selectable(int i) {
-    return items[i].kind != MI_SEPARATOR;
+    return items[i].kind != MI_SEPARATOR && items[i].kind != MI_INFO;
 }
 
 static int seek_selectable(int from, int dir) {
@@ -281,6 +337,9 @@ void overlay_menu_check(uint32_t cur, uint32_t lb_mask, uint32_t rb_mask)
 {
     if (!settings_loaded) {
         load_settings();
+#if PICO_ON_DEVICE
+        batt_init();  /* warm up ADC early so first read is accurate */
+#endif
         settings_loaded = 1;
     }
 
@@ -317,6 +376,22 @@ void overlay_menu_check(uint32_t cur, uint32_t lb_mask, uint32_t rb_mask)
             hold_active = 0;
             cursor = 0;
             scroll_top = 0;
+
+            /* Read battery — use integer math (Pico SDK printf has no %f) */
+#if PICO_ON_DEVICE
+            {
+                int pct = batt_percent();
+                int mv = (int)(batt_voltage() * 1000.0f);
+                int v_whole = mv / 1000;
+                int v_frac = (mv % 1000) / 10;  /* 2 decimal places */
+                if (pct >= 100)
+                    snprintf(batt_text, sizeof(batt_text), "CHRG %d.%02dV", v_whole, v_frac);
+                else
+                    snprintf(batt_text, sizeof(batt_text), "%d%% %d.%02dV", pct, v_whole, v_frac);
+            }
+#else
+            snprintf(batt_text, sizeof(batt_text), "N/A");
+#endif
 
             /* Read current Doom state into menu values */
             player_t *p = &players[consoleplayer];
@@ -409,6 +484,23 @@ void overlay_menu_render(void)
             }
             case MI_ACTION:
                 break;
+            case MI_INFO: {
+                /* Battery: text + green/grey bar underneath */
+                int vx2 = FB_W - doom_font_width(batt_text) - 2;
+                doom_font_draw(g_fb, batt_text, vx2, y + 1, COL_GREY);
+                /* Progress bar spanning full row width */
+                int bar_y = y + ROW_H - 2;
+                int bar_w = FB_W - 4;
+#if PICO_ON_DEVICE
+                int pct = batt_percent();
+#else
+                int pct = 75;
+#endif
+                int fill_w = (pct * bar_w) / 100;
+                for (int bx = 2; bx < 2 + bar_w; bx++)
+                    g_fb[bar_y * FB_W + bx] = (bx - 2 < fill_w) ? COL_GREEN : COL_DARK;
+                break;
+            }
             default:
                 break;
         }
@@ -478,9 +570,13 @@ void overlay_menu_input(uint32_t cur, uint32_t prev)
         cursor = seek_selectable(cursor, 1);
     }
 
-    /* Keep cursor in scroll view */
+    /* Keep cursor in scroll view. When cursor is on the last
+     * selectable item, scroll far enough to show any trailing
+     * non-selectable items (battery info) below it. */
     if (cursor < scroll_top) scroll_top = cursor;
     if (cursor >= scroll_top + VISIBLE) scroll_top = cursor - VISIBLE + 1;
+    /* Ensure trailing items are visible when near the bottom */
+    if (NUM_ITEMS - scroll_top <= VISIBLE) scroll_top = NUM_ITEMS - VISIBLE;
     if (scroll_top < 0) scroll_top = 0;
 
     menu_item_t *it = &items[cursor];
