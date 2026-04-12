@@ -3,7 +3,7 @@
 DOOM on the [Thumby Color](https://thumby.us/) — the world's smallest
 color gaming handheld.
 
-Full shareware DOOM (Episode 1) running as standalone bare-metal
+Full shareware/ultimate DOOM or DOOM II running as standalone bare-metal
 firmware on the RP2350. Music, sound effects, save games, screen
 melts — the real deal on a 128x128 screen.
 
