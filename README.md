@@ -7,6 +7,18 @@ Full shareware DOOM (Episode 1) running as standalone bare-metal
 firmware on the RP2350. Music, sound effects, save games, screen
 melts — the real deal on a 128x128 screen.
 
+<p align="center">
+  <img src="images/title-screen.jpg" alt="Title screen" width="320">
+  <img src="images/gameplay.jpg" alt="Gameplay" width="320">
+</p>
+
+<p align="center">
+  <a href="https://www.youtube.com/watch?v=UlLmX9A7Qhs">
+    <img src="https://img.youtube.com/vi/UlLmX9A7Qhs/0.jpg" alt="Video demo" width="320">
+  </a>
+  <br><em>Click to watch the video demo</em>
+</p>
+
 ## Quick Start
 
 **Warning:** Flashing this firmware **replaces the entire Thumby Color
@@ -62,6 +74,10 @@ Doomguy's face (which reacts to damage direction). Key cards appear
 as colored markers when collected.
 
 ### Overlay Menu
+
+<p align="center">
+  <img src="images/overlay-menu.jpg" alt="Overlay menu" width="320">
+</p>
 
 Hold **LB + RB** together for 3 seconds during gameplay to open the
 overlay menu. The game pauses and a settings screen appears over the
