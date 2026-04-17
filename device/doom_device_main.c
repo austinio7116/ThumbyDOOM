@@ -22,34 +22,10 @@
 #include "doom_audio_pwm.h"
 #include "doom_font.h"
 
-#ifdef THUMBYONE_SLOT_MODE
-#include "hardware/structs/qmi.h"
-/* When launched via rom_chain_image from ThumbyOne's lobby, the
- * bootrom sets up QMI ATRANS slot 0 to cover DOOM's 2.5 MB
- * partition at physical 0x1A0000. Slots 1..3 are left at SIZE=0,
- * which bus-faults on any access in their windows
- * (0x10400000..0x11000000 logical).
- *
- * DOOM's vendored rp2040-doom code has get_end_of_flash() which
- * walks flash in 2 MB strides from 0x10200000 all the way to
- * 0x11000000 looking for end-of-image. Without the ATRANS
- * extension it hard-faults the moment it reads into slot 1.
- *
- * Map slots 1..3 as identity-ish for the rest of the XIP window
- * so any physical flash address is readable. DOOM's settings
- * save (which is what needs get_end_of_flash's answer) is
- * irrelevant in ThumbyOne mode — settings belong on the shared
- * FAT — but we'd rather let DOOM boot with a nonsense settings
- * address than fault. Step-D (return-to-lobby menu + shared
- * settings) will properly neutralise the save path later. */
-__attribute__((constructor(101)))
-static void thumbyone_setup_atrans_slots(void) {
-    qmi_hw->atrans[1] = (0x400u << 16) | 0x400u;
-    qmi_hw->atrans[2] = (0x400u << 16) | 0x800u;
-    qmi_hw->atrans[3] = (0x400u << 16) | 0xC00u;
-    __asm__ volatile("dsb" ::: "memory");
-}
-#endif
+/* ATRANS slots 1..3 identity setup now lives in ThumbyOne's
+ * common/thumbyone_handoff.c — the handoff source is compiled
+ * into every slot in THUMBYONE_SLOT_MODE, which carries a
+ * priority-101 constructor that runs before this file's main. */
 
 /* Framebuffer used for boot splash + (later) handed to the Doom
  * renderer as its scanout target. 128x128 RGB565. */
