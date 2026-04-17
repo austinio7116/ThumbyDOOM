@@ -13,15 +13,24 @@
 #
 cmake_minimum_required(VERSION 3.16)
 
-set(PICO_BOARD tinycircuits_thumby_color_rp2350)
-set(PICO_PLATFORM rp2350)
-include(${PICO_SDK_PATH}/pico_sdk_init.cmake)
+# Standalone vs. embedded-in-ThumbyOne build.
+#
+# When THUMBYONE_SLOT_MODE is set (via add_subdirectory from the
+# ThumbyOne top-level CMakeLists), the parent has already
+# configured the Pico SDK and called project(). Skip that
+# scaffolding here and let ThumbyOne consume our ELF directly.
+# Standalone build is unchanged.
+if (NOT THUMBYONE_SLOT_MODE)
+    set(PICO_BOARD tinycircuits_thumby_color_rp2350)
+    set(PICO_PLATFORM rp2350)
+    include(${PICO_SDK_PATH}/pico_sdk_init.cmake)
 
-project(thumbydoom_device C CXX ASM)
-set(CMAKE_C_STANDARD 11)
-set(CMAKE_CXX_STANDARD 14)
+    project(thumbydoom_device C CXX ASM)
+    set(CMAKE_C_STANDARD 11)
+    set(CMAKE_CXX_STANDARD 14)
 
-pico_sdk_init()
+    pico_sdk_init()
+endif()
 
 set(DOOM_ROOT  ${CMAKE_CURRENT_LIST_DIR}/..)
 set(VENDOR     ${DOOM_ROOT}/vendor/rp2040-doom)
@@ -371,4 +380,18 @@ pico_set_float_implementation(thumbydoom none)
 pico_set_double_implementation(thumbydoom none)
 pico_enable_stdio_usb(thumbydoom 0)
 pico_enable_stdio_uart(thumbydoom 0)
-pico_add_extra_outputs(thumbydoom)
+
+if (THUMBYONE_SLOT_MODE)
+    # Embedded in ThumbyOne's DOOM partition (2.5 MB at flash
+    # offset 0x1A0000). DOOM has no FatFs and no internal reboot
+    # paths, so it doesn't need the ATRANS save/restore plumbing
+    # that NES and P8 do — just the slot-mode flag + family.
+    target_compile_definitions(thumbydoom PRIVATE THUMBYONE_SLOT_MODE=1)
+    # Compile ThumbyOne's handoff source into this target directly.
+    target_sources(thumbydoom PRIVATE ${THUMBYONE_COMMON_SRC})
+    target_include_directories(thumbydoom PRIVATE ${THUMBYONE_COMMON_INCLUDE})
+    pico_set_uf2_family(thumbydoom "absolute")
+    pico_add_extra_outputs(thumbydoom)
+else()
+    pico_add_extra_outputs(thumbydoom)
+endif()
