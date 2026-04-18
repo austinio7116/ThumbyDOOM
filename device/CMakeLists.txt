@@ -396,7 +396,14 @@ if (THUMBYONE_SLOT_MODE)
     # `I_Quit()`; the linker redirects them to __wrap_I_Quit in
     # doom_quit_handoff.c.
     target_sources(thumbydoom PRIVATE doom_quit_handoff.c)
-    target_link_options(thumbydoom PRIVATE -Wl,--wrap=I_Quit)
+    # Two wrap points: M_StartMessage2 catches the "Quit Game" menu
+    # selection BEFORE the confirm dialog appears (skips the
+    # 'press Y to quit' step), I_Quit catches any fallthrough path
+    # that somehow still reaches the newlib exit stub.
+    target_link_options(thumbydoom PRIVATE
+        -Wl,--wrap=M_StartMessage2
+        -Wl,--wrap=I_Quit
+    )
     pico_set_uf2_family(thumbydoom "absolute")
     pico_add_extra_outputs(thumbydoom)
 else()
