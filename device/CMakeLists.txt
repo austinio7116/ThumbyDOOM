@@ -390,6 +390,13 @@ if (THUMBYONE_SLOT_MODE)
     # Compile ThumbyOne's handoff source into this target directly.
     target_sources(thumbydoom PRIVATE ${THUMBYONE_COMMON_SRC})
     target_include_directories(thumbydoom PRIVATE ${THUMBYONE_COMMON_INCLUDE})
+    # Override the vanilla DOOM "Quit Game" action (vendored I_Quit
+    # ends in exit(0), which just hangs on bare metal) with a
+    # return-to-lobby handoff. Vendored call sites stay as
+    # `I_Quit()`; the linker redirects them to __wrap_I_Quit in
+    # doom_quit_handoff.c.
+    target_sources(thumbydoom PRIVATE doom_quit_handoff.c)
+    target_link_options(thumbydoom PRIVATE -Wl,--wrap=I_Quit)
     pico_set_uf2_family(thumbydoom "absolute")
     pico_add_extra_outputs(thumbydoom)
 else()
