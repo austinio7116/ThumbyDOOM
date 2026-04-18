@@ -1559,6 +1559,19 @@ static const char *M_SelectEndMessage(void)
 
 void M_QuitDOOM(int choice)
 {
+#ifdef THUMBYONE_SLOT_MODE
+    /* ThumbyOne slot build: skip the 'Are you sure?' confirm prompt
+     * entirely and hand control straight back to the lobby. The
+     * confirm dialog needs a Y/space/esc/abort keypress to dismiss,
+     * and none of those map nicely to the Thumby's tiny button set
+     * — users got stranded on the prompt with no way forward.
+     * __wrap_M_StartMessage2 would be cleaner but the wrapped
+     * function gets inlined at -O2, so we short-circuit here. */
+    extern void thumbyone_handoff_request_lobby(void);
+    thumbyone_handoff_request_lobby();
+    /* does not return */
+    return;
+#endif
 #if !DOOM_TINY
     DEH_snprintf(endstring, sizeof(endstring), "%s\n\n" DOSY,
                  DEH_String(M_SelectEndMessage()));
