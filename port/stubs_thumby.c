@@ -30,13 +30,38 @@ boolean net_client_connected = false;
 #include "hardware/sync.h"
 #include "pico/flash.h"
 
+#ifdef THUMBYONE_SLOT_MODE
+/* The SDK's flash_range_erase / flash_range_program reset QMI
+ * ATRANS (needed for this chained slot's self-view of flash) and
+ * drop the fast QPI continuous-read XIP config back to single-SPI.
+ * Without re-applying both after each write, subsequent XIP reads
+ * either fault or run at ~5× the clock cycles — visible as DOOM
+ * dropping to a slow crawl after the overlay menu has saved
+ * settings (gamma/volume/controls all live in save-slot 7). */
+#include "hardware/structs/qmi.h"
+extern void thumbyone_xip_fast_setup(void);
+#endif
+
 /* Callback for flash_safe_execute — runs with core1 paused and
  * interrupts disabled. */
 typedef struct { uint32_t offs; const uint8_t *data; } flash_wr_t;
 static void flash_do_write(void *param) {
     flash_wr_t *p = (flash_wr_t *)param;
+#ifdef THUMBYONE_SLOT_MODE
+    uint32_t saved_atrans[4] = {
+        qmi_hw->atrans[0], qmi_hw->atrans[1],
+        qmi_hw->atrans[2], qmi_hw->atrans[3],
+    };
+#endif
     flash_range_erase(p->offs, FLASH_SECTOR_SIZE);
     flash_range_program(p->offs, p->data, FLASH_SECTOR_SIZE);
+#ifdef THUMBYONE_SLOT_MODE
+    qmi_hw->atrans[0] = saved_atrans[0];
+    qmi_hw->atrans[1] = saved_atrans[1];
+    qmi_hw->atrans[2] = saved_atrans[2];
+    qmi_hw->atrans[3] = saved_atrans[3];
+    thumbyone_xip_fast_setup();
+#endif
 }
 
 /* Real flash write for save games. flash_safe_execute handles
