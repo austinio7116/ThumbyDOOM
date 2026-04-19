@@ -173,26 +173,43 @@ static int settings_dirty;   /* 1 = needs writing on next game frame */
 static int settings_loaded;
 
 #if PICO_ON_DEVICE
+
+#ifdef THUMBYONE_SLOT_MODE
+#  include "thumbyone_settings.h"
+#endif
+
 static void load_settings(void) {
     /* Read settings from save slot 7 via the save game system. */
     extern void P_SaveGameGetExistingFlashSlotAddresses(void *, int);
     typedef struct { const uint8_t *data; int size; } flash_slot_info_t;
     flash_slot_info_t slots[8];
     P_SaveGameGetExistingFlashSlotAddresses(slots, 8);
-    if (!slots[7].data || slots[7].size < (int)sizeof(settings_t))
-        return;
-    const settings_t *s = (const settings_t *)slots[7].data;
-    if (s->magic == SETTINGS_MAGIC) {
-        val_show_fps = s->show_fps;
-        val_controls = s->controls;
-        val_volume   = s->volume <= 20 ? s->volume : 8;
-        val_music    = s->music  <= 20 ? s->music  : 8;
-        val_gamma    = s->gamma  <=  4 ? s->gamma  : 0;
-        extern isb_int8_t usegamma;
-        extern int palette_dirty;
-        usegamma = val_gamma;
-        palette_dirty = 1;
+    if (slots[7].data && slots[7].size >= (int)sizeof(settings_t)) {
+        const settings_t *s = (const settings_t *)slots[7].data;
+        if (s->magic == SETTINGS_MAGIC) {
+            val_show_fps = s->show_fps;
+            val_controls = s->controls;
+            val_volume   = s->volume <= 20 ? s->volume : 8;
+            val_music    = s->music  <= 20 ? s->music  : 8;
+            val_gamma    = s->gamma  <=  4 ? s->gamma  : 0;
+            extern isb_int8_t usegamma;
+            extern int palette_dirty;
+            usegamma = val_gamma;
+            palette_dirty = 1;
+        }
     }
+
+#ifdef THUMBYONE_SLOT_MODE
+    /* Apply the ThumbyOne system-wide volume (/.volume on the shared
+     * flash settings sector) on top of whatever DOOM had in its own
+     * save slot 7 — the lobby's slider is the master control. Both
+     * SFX and music take the same value: the lobby has one volume,
+     * not two. User can still adjust per-session from DOOM's own
+     * menu; changes don't propagate back to /.volume though (read-
+     * only integration — the lobby is the write side). */
+    val_volume = thumbyone_settings_load_volume();
+    val_music  = val_volume;
+#endif
 }
 
 static void write_settings(void) {

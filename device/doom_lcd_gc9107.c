@@ -12,6 +12,14 @@
 #include "hardware/dma.h"
 #include "hardware/gpio.h"
 
+#ifdef THUMBYONE_SLOT_MODE
+/* Shared PIO-PWM backlight + cross-slot settings (flash sector).
+ * DOOM reads /.volume + /.brightness from the same sector the
+ * lobby + FatFs slots write to. */
+#  include "thumbyone_backlight.h"
+#  include "thumbyone_settings.h"
+#endif
+
 #define LCD_SPI            spi0
 #define LCD_SPI_HZ         (80 * 1000 * 1000)
 
@@ -67,8 +75,15 @@ void doom_lcd_init(void) {
     gpio_init(PIN_DC);  gpio_set_dir(PIN_DC,  GPIO_OUT); gpio_put(PIN_DC,  1);
     gpio_init(PIN_RST); gpio_set_dir(PIN_RST, GPIO_OUT); gpio_put(PIN_RST, 1);
 
-    /* Backlight: drive high for full brightness. PWM later. */
+    /* Backlight off during panel init. ThumbyOne slot build uses
+     * the shared PIO-PWM driver on GP7 so the lobby-set brightness
+     * applies here too. Standalone DOOM build keeps the plain
+     * GPIO on/off. */
+#ifdef THUMBYONE_SLOT_MODE
+    thumbyone_backlight_init();
+#else
     gpio_init(PIN_BL);  gpio_set_dir(PIN_BL,  GPIO_OUT); gpio_put(PIN_BL,  0);
+#endif
 
     /* Hardware reset pulse */
     sleep_ms(5);
@@ -125,8 +140,14 @@ void doom_lcd_init(void) {
     channel_config_set_transfer_data_size(&dma_cfg, DMA_SIZE_16);
     channel_config_set_dreq(&dma_cfg, DREQ_SPI0_TX);
 
-    /* Backlight on */
+    /* Backlight on — honour the ThumbyOne /.brightness under slot
+     * mode so DOOM matches whatever the lobby or another slot's
+     * menu was last set to. Standalone DOOM: full-brightness. */
+#ifdef THUMBYONE_SLOT_MODE
+    thumbyone_backlight_set(thumbyone_settings_load_brightness());
+#else
     gpio_put(PIN_BL, 1);
+#endif
 }
 
 void doom_lcd_wait_idle(void) {
@@ -153,5 +174,10 @@ void doom_lcd_present(const uint16_t *fb_rgb565) {
 }
 
 void doom_lcd_backlight(int on) {
+#ifdef THUMBYONE_SLOT_MODE
+    if (on) thumbyone_backlight_set(thumbyone_settings_load_brightness());
+    else    thumbyone_backlight_set(0);   /* clamps up to FLOOR */
+#else
     gpio_put(PIN_BL, on ? 1 : 0);
+#endif
 }

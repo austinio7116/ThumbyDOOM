@@ -390,10 +390,18 @@ if (THUMBYONE_SLOT_MODE)
     # Compile ThumbyOne's handoff source into this target directly.
     target_sources(thumbydoom PRIVATE
         ${THUMBYONE_COMMON_SRC}
-        ${THUMBYONE_COMMON_BATTERY_SRC})
+        ${THUMBYONE_COMMON_BATTERY_SRC}
+        ${THUMBYONE_COMMON_BACKLIGHT_SRC}
+        ${THUMBYONE_COMMON_SETTINGS_SRC})
     target_include_directories(thumbydoom PRIVATE
         ${THUMBYONE_COMMON_INCLUDE}
-        ${THUMBYONE_COMMON_BATTERY_INCLUDE})
+        ${THUMBYONE_COMMON_BATTERY_INCLUDE}
+        ${THUMBYONE_COMMON_BACKLIGHT_INCLUDE}
+        ${THUMBYONE_COMMON_SETTINGS_INCLUDE})
+    # DOOM needs hardware_pio for thumbyone_backlight (PIO PWM on
+    # GP7) and can safely opt in to the shared settings reader
+    # (flash-sector-backed, zero FatFs cost). */
+    target_link_libraries(thumbydoom PRIVATE hardware_pio)
     # Override the vanilla DOOM "Quit Game" action (vendored I_Quit
     # ends in exit(0), which just hangs on bare metal) with a
     # return-to-lobby handoff. Vendored call sites stay as
