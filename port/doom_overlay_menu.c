@@ -27,17 +27,28 @@ extern int doom_font_width(const char *text);
 #include "doom/g_game.h"
 
 /* --- Battery measurement ------------------------------------------ */
-/* Matches ThumbyNES nes_battery.c — GPIO29/ADC3, 1:2 voltage divider.
- * First ADC read after channel switch is discarded (RP2350 pipeline
- * returns the previously-selected channel's sample). */
 #if PICO_ON_DEVICE
-#include "hardware/adc.h"
-#define BATT_GPIO    29
-#define BATT_ADC_CH  3
-#define ADC_REF      3.3f
-#define ADC_MAX      4095.0f
-#define HALF_MIN_V   1.45f  /* ~2.9V cell = 0% */
-#define HALF_MAX_V   1.85f  /* ~3.7V cell = 100% */
+#  ifdef THUMBYONE_SLOT_MODE
+/* Under ThumbyOne: delegate to the shared battery helper so DOOM
+ * reports the same smoothed / hysteresised number as the lobby,
+ * NES, P8 and MPY slots. (Previously each slot had its own
+ * single-sample ADC read with different warm-up and caching
+ * policies — hence "95%" on the lobby and "97%" on DOOM for the
+ * exact same battery voltage.) */
+#    include "thumbyone_battery.h"
+static int   batt_percent(void) { int   p = 0;     thumbyone_battery_read(&p,   NULL, NULL); return p; }
+static float batt_voltage(void) { float v = 0.0f;  thumbyone_battery_read(NULL, NULL, &v); return v; }
+static bool  batt_charging(void){ bool  c = false; thumbyone_battery_read(NULL, &c,   NULL); return c; }
+#  else
+/* Standalone ThumbyDOOM build — keep the old direct-ADC path so
+ * the repo still stands on its own. */
+#    include "hardware/adc.h"
+#    define BATT_GPIO    29
+#    define BATT_ADC_CH  3
+#    define ADC_REF      3.3f
+#    define ADC_MAX      4095.0f
+#    define HALF_MIN_V   1.45f  /* ~2.9V cell = 0% */
+#    define HALF_MAX_V   1.85f  /* ~3.7V cell = 100% */
 
 static int batt_adc_inited;
 
@@ -46,7 +57,6 @@ static void batt_init(void) {
         adc_init();
         adc_gpio_init(BATT_GPIO);
         adc_select_input(BATT_ADC_CH);
-        /* Warm up: discard several reads for ADC settling after init. */
         (void)adc_read();
         (void)adc_read();
         (void)adc_read();
@@ -57,8 +67,6 @@ static void batt_init(void) {
 static float batt_half_voltage(void) {
     batt_init();
     adc_select_input(BATT_ADC_CH);
-    /* Discard first read after channel switch — RP2350 ADC pipeline
-     * returns the previously-selected channel's in-flight sample. */
     (void)adc_read();
     return (float)adc_read() * ADC_REF / ADC_MAX;
 }
@@ -73,12 +81,13 @@ static int batt_percent(void) {
     return pct;
 }
 
-static float batt_voltage(void) {
-    return 2.0f * batt_half_voltage();
-}
+static float batt_voltage(void) { return 2.0f * batt_half_voltage(); }
+static bool  batt_charging(void) { return batt_half_voltage() >= HALF_MAX_V; }
+#  endif
 #endif
 
 static char batt_text[16];  /* "95% 3.85V" or "CHRG 4.15V" */
+static int  batt_cached_pct;  /* captured at menu-open, reused per-frame */
 
 /* --- Colours (RGB565) --- */
 #define COL_ORANGE  0xFD20
@@ -338,7 +347,11 @@ void overlay_menu_check(uint32_t cur, uint32_t lb_mask, uint32_t rb_mask)
     if (!settings_loaded) {
         load_settings();
 #if PICO_ON_DEVICE
-        batt_init();  /* warm up ADC early so first read is accurate */
+#  ifdef THUMBYONE_SLOT_MODE
+        thumbyone_battery_init();  /* warm up shared ADC helper */
+#  else
+        batt_init();               /* warm up local ADC */
+#  endif
 #endif
         settings_loaded = 1;
     }
@@ -377,19 +390,23 @@ void overlay_menu_check(uint32_t cur, uint32_t lb_mask, uint32_t rb_mask)
             cursor = 0;
             scroll_top = 0;
 
-            /* Read battery — use integer math (Pico SDK printf has no %f) */
+            /* Read battery once at menu-open. Cached value + text are
+             * reused in the per-frame render loop so we don't burn
+             * 16 ADC samples every frame just to redraw the same bar. */
 #if PICO_ON_DEVICE
             {
-                int pct = batt_percent();
+                batt_cached_pct = batt_percent();
+                bool chg = batt_charging();
                 int mv = (int)(batt_voltage() * 1000.0f);
                 int v_whole = mv / 1000;
                 int v_frac = (mv % 1000) / 10;  /* 2 decimal places */
-                if (pct >= 100)
+                if (chg)
                     snprintf(batt_text, sizeof(batt_text), "CHRG %d.%02dV", v_whole, v_frac);
                 else
-                    snprintf(batt_text, sizeof(batt_text), "%d%% %d.%02dV", pct, v_whole, v_frac);
+                    snprintf(batt_text, sizeof(batt_text), "%d%% %d.%02dV", batt_cached_pct, v_whole, v_frac);
             }
 #else
+            batt_cached_pct = 75;
             snprintf(batt_text, sizeof(batt_text), "N/A");
 #endif
 
@@ -491,11 +508,7 @@ void overlay_menu_render(void)
                 /* Progress bar spanning full row width */
                 int bar_y = y + ROW_H - 2;
                 int bar_w = FB_W - 4;
-#if PICO_ON_DEVICE
-                int pct = batt_percent();
-#else
-                int pct = 75;
-#endif
+                int pct = batt_cached_pct;
                 int fill_w = (pct * bar_w) / 100;
                 for (int bx = 2; bx < 2 + bar_w; bx++)
                     g_fb[bar_y * FB_W + bx] = (bx - 2 < fill_w) ? COL_GREEN : COL_DARK;

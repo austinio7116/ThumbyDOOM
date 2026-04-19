@@ -388,8 +388,12 @@ if (THUMBYONE_SLOT_MODE)
     # that NES and P8 do — just the slot-mode flag + family.
     target_compile_definitions(thumbydoom PRIVATE THUMBYONE_SLOT_MODE=1)
     # Compile ThumbyOne's handoff source into this target directly.
-    target_sources(thumbydoom PRIVATE ${THUMBYONE_COMMON_SRC})
-    target_include_directories(thumbydoom PRIVATE ${THUMBYONE_COMMON_INCLUDE})
+    target_sources(thumbydoom PRIVATE
+        ${THUMBYONE_COMMON_SRC}
+        ${THUMBYONE_COMMON_BATTERY_SRC})
+    target_include_directories(thumbydoom PRIVATE
+        ${THUMBYONE_COMMON_INCLUDE}
+        ${THUMBYONE_COMMON_BATTERY_INCLUDE})
     # Override the vanilla DOOM "Quit Game" action (vendored I_Quit
     # ends in exit(0), which just hangs on bare metal) with a
     # return-to-lobby handoff. Vendored call sites stay as
