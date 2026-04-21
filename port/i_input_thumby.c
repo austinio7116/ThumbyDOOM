@@ -88,7 +88,9 @@ static uint32_t prev_state = 0;     /* bit i = btn_map[i] held */
 #define B_IDX           7
 #define LB_IDX          4
 #define RB_IDX          5
+#define MENU_IDX        8
 #define LONG_PRESS_MS   400          /* hold B this long → automap */
+#define MENU_LONG_MS    500          /* hold MENU this long → overlay menu */
 
 /* Keycodes for prev/next weapon — matched in I_InitInput. */
 #define KEY_WPREV       '['
@@ -97,6 +99,15 @@ static uint32_t prev_state = 0;     /* bit i = btn_map[i] held */
 static uint32_t b_press_start;       /* timestamp when B was pressed */
 static int      b_long_fired;        /* already sent TAB this press? */
 static int      b_suppressed;        /* suppress B release after long press */
+
+/* MENU press tracking. Short tap → synthesised ESC on release
+ * (opens Doom's native menu); long-press → overlay menu trigger
+ * (captured, no ESC fires). `menu_captured_by_overlay` is set any
+ * frame the overlay is active with MENU held, so the next release
+ * doesn't mistakenly fire ESC when the overlay closes via MENU. */
+static uint32_t menu_press_start;
+static int      menu_long_fired;
+static int      menu_captured_by_overlay;
 
 extern void D_PostEvent(event_t *ev);
 
@@ -146,8 +157,51 @@ void I_GetEvent(void)
         if (!gpio_get(btn_map[i].gpio)) cur |= (1u << i);
     }
 
-    /* Overlay menu: check LB+RB hold trigger. */
-    overlay_menu_check(cur, 1u << LB_IDX, 1u << RB_IDX);
+    /* Overlay menu — first-call warm-up (settings load, ADC init).
+     * The mask args are unused; the long-press trigger now lives
+     * below (MENU hold), so we can distinguish short vs long press
+     * and leave Doom's native menu reachable on a plain tap. */
+    overlay_menu_check(cur, 0, 0);
+
+    /* MENU button handling — must run BEFORE the overlay-active
+     * early-return below so we observe MENU state across the
+     * overlay session. Short tap → fire ESC (Doom's menu) on
+     * release. Long hold (≥MENU_LONG_MS) → open the ThumbyDOOM
+     * overlay settings menu. If MENU is held at any point while
+     * the overlay is active (e.g. user taps MENU to close it), the
+     * `captured_by_overlay` flag skips the ESC synthesis on
+     * release so Doom's menu doesn't pop up right after closing
+     * the overlay. */
+    {
+        uint32_t menu_mask = 1u << MENU_IDX;
+        if ((cur & menu_mask) && !(prev_state & menu_mask)) {
+            menu_press_start = now_ms();
+            menu_long_fired  = 0;
+            menu_captured_by_overlay = overlay_menu_active() ? 1 : 0;
+        }
+        if (overlay_menu_active() && (cur & menu_mask)) {
+            menu_captured_by_overlay = 1;
+        }
+        if ((cur & menu_mask) && !menu_long_fired && !overlay_menu_active()) {
+            if (now_ms() - menu_press_start >= MENU_LONG_MS) {
+                overlay_menu_open_now();
+                menu_long_fired = 1;
+                menu_captured_by_overlay = 1;
+            }
+        }
+        if (!(cur & menu_mask) && (prev_state & menu_mask)) {
+            if (!menu_long_fired && !menu_captured_by_overlay) {
+                /* Clean short tap outside overlay — synthesise an
+                 * ESC down+up pair so Doom opens its native menu. */
+                event_t ev = { ev_keydown, KEY_ESCAPE, -1, -1 };
+                D_PostEvent(&ev);
+                ev.type = ev_keyup;
+                D_PostEvent(&ev);
+            }
+            menu_long_fired = 0;
+            menu_captured_by_overlay = 0;
+        }
+    }
 
     /* While overlay menu is active, route input to menu only. */
     static int was_in_menu;
@@ -224,8 +278,12 @@ void I_GetEvent(void)
         }
     }
 
-    /* Suppress B and triggers while chord/long-press is active. */
-    uint32_t suppress = 0;
+    /* Suppress B and triggers while chord/long-press is active.
+     * MENU is always suppressed from the generic loop — it's
+     * handled entirely by the short/long-press block above so the
+     * keydown on press doesn't race the short-tap ESC we synthesise
+     * on release. */
+    uint32_t suppress = 1u << MENU_IDX;
     if (b_suppressed) suppress |= b_mask;
     if (weapon_chord)  suppress |= lb_mask | rb_mask;
     uint32_t changed = (cur ^ prev_state) & ~suppress;

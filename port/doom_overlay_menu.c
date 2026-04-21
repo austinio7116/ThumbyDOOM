@@ -350,9 +350,11 @@ static void apply_cheats(void) {
 
 /* --- Public API --- */
 
+/* Legacy LB+RB chord timing state, kept for API compatibility
+ * while the input layer owns the actual long-press detection.
+ * Always zero now; no hold is being timed here. */
 static uint32_t hold_start_ms;
 static int      hold_active;
-#define HOLD_MS 3000
 
 static uint32_t now_ms(void) {
     extern uint64_t time_us_64(void);
@@ -361,6 +363,7 @@ static uint32_t now_ms(void) {
 
 void overlay_menu_check(uint32_t cur, uint32_t lb_mask, uint32_t rb_mask)
 {
+    (void)cur; (void)lb_mask; (void)rb_mask;
     if (!settings_loaded) {
         load_settings();
 #if PICO_ON_DEVICE
@@ -372,72 +375,66 @@ void overlay_menu_check(uint32_t cur, uint32_t lb_mask, uint32_t rb_mask)
 #endif
         settings_loaded = 1;
     }
+    /* settings_dirty is flushed from D_RunFrame after TryRunTics.
+     * Menu open trigger now lives in the input layer
+     * (see overlay_menu_open_now). */
+    hold_active = 0;
+    hold_start_ms = 0;
+}
 
-    /* settings_dirty is flushed from D_RunFrame after TryRunTics. */
-
+void overlay_menu_open_now(void)
+{
     if (menu_open) return;
 
-    int both = (cur & lb_mask) && (cur & rb_mask);
-    if (both) {
-        if (!hold_active) {
-            hold_start_ms = now_ms();
-            hold_active = 1;
-        } else if (now_ms() - hold_start_ms >= HOLD_MS) {
-            /* Release all Doom keys BEFORE opening the menu.
-             * Doom has already processed keydowns for held buttons
-             * (LB=',' RB='.' etc). These keyups are posted into the
-             * event queue and will be processed by TryRunTics on
-             * this same frame, clearing Doom's internal key state.
-             * Keep it under 8 events (MAXEVENTS with DOOM_SMALL). */
-            {
-                extern void D_PostEvent(event_t *ev);
-                static const int release_keys[] = {
-                    ',', '.', KEY_LEFTARROW, KEY_RIGHTARROW,
-                    KEY_UPARROW, KEY_DOWNARROW, KEY_RCTRL
-                };
-                for (int i = 0; i < (int)(sizeof(release_keys)/sizeof(release_keys[0])); i++) {
-                    event_t ev = { ev_keyup, release_keys[i], -1, -1 };
-                    D_PostEvent(&ev);
-                }
-            }
+    /* Release all Doom keys BEFORE opening the menu. Doom has
+     * already processed keydowns for any held buttons (LB=','
+     * RB='.' etc); posting keyups clears its internal key state
+     * on this same tick. Keep it under 8 events (MAXEVENTS with
+     * DOOM_SMALL). */
+    {
+        extern void D_PostEvent(event_t *ev);
+        static const int release_keys[] = {
+            ',', '.', KEY_LEFTARROW, KEY_RIGHTARROW,
+            KEY_UPARROW, KEY_DOWNARROW, KEY_RCTRL
+        };
+        for (int i = 0; i < (int)(sizeof(release_keys)/sizeof(release_keys[0])); i++) {
+            event_t ev = { ev_keyup, release_keys[i], -1, -1 };
+            D_PostEvent(&ev);
+        }
+    }
 
-            /* Open menu */
-            menu_open = 1;
-            hold_active = 0;
-            cursor = 0;
-            scroll_top = 0;
+    menu_open = 1;
+    hold_active = 0;
+    cursor = 0;
+    scroll_top = 0;
 
-            /* Read battery once at menu-open. Cached value + text are
-             * reused in the per-frame render loop so we don't burn
-             * 16 ADC samples every frame just to redraw the same bar. */
+    /* Read battery once at menu-open. Cached value + text are
+     * reused in the per-frame render loop so we don't burn 16
+     * ADC samples every frame just to redraw the same bar. */
 #if PICO_ON_DEVICE
-            {
-                batt_cached_pct = batt_percent();
-                bool chg = batt_charging();
-                int mv = (int)(batt_voltage() * 1000.0f);
-                int v_whole = mv / 1000;
-                int v_frac = (mv % 1000) / 10;  /* 2 decimal places */
-                if (chg)
-                    snprintf(batt_text, sizeof(batt_text), "CHRG %d.%02dV", v_whole, v_frac);
-                else
-                    snprintf(batt_text, sizeof(batt_text), "%d%% %d.%02dV", batt_cached_pct, v_whole, v_frac);
-            }
+    {
+        batt_cached_pct = batt_percent();
+        bool chg = batt_charging();
+        int mv = (int)(batt_voltage() * 1000.0f);
+        int v_whole = mv / 1000;
+        int v_frac = (mv % 1000) / 10;  /* 2 decimal places */
+        if (chg)
+            snprintf(batt_text, sizeof(batt_text), "CHRG %d.%02dV", v_whole, v_frac);
+        else
+            snprintf(batt_text, sizeof(batt_text), "%d%% %d.%02dV", batt_cached_pct, v_whole, v_frac);
+    }
 #else
-            batt_cached_pct = 75;
-            snprintf(batt_text, sizeof(batt_text), "N/A");
+    batt_cached_pct = 75;
+    snprintf(batt_text, sizeof(batt_text), "N/A");
 #endif
 
-            /* Read current Doom state into menu values */
-            player_t *p = &players[consoleplayer];
-            val_godmode = (p->cheats & CF_GODMODE) ? 1 : 0;
-            val_noclip  = (p->cheats & CF_NOCLIP) ? 1 : 0;
-            val_gamma   = usegamma;
+    /* Read current Doom state into menu values */
+    player_t *p = &players[consoleplayer];
+    val_godmode = (p->cheats & CF_GODMODE) ? 1 : 0;
+    val_noclip  = (p->cheats & CF_NOCLIP) ? 1 : 0;
+    val_gamma   = usegamma;
 
-            dim_backdrop();
-        }
-    } else {
-        hold_active = 0;
-    }
+    dim_backdrop();
 }
 
 int overlay_menu_active(void) {
