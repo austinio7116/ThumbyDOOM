@@ -5,7 +5,7 @@ color gaming handheld.
 
 Full shareware/ultimate DOOM or DOOM II running as standalone bare-metal
 firmware on the RP2350. Music, sound effects, save games, screen
-melts — the real deal on a 128x128 screen.
+melts — rendered natively on a 128x128 screen.
 
 <p align="center">
   <img src="images/title-screen.jpg" alt="Title screen" width="320">
