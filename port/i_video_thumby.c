@@ -17,6 +17,13 @@
 #include "v_video.h"
 #include "m_random.h"
 #include "doom_overlay_menu.h"
+#include "doom/doomdef.h"
+#include "doom/d_player.h"
+#include "doom/doomstat.h"
+
+#ifdef THUMBYONE_SLOT_MODE
+#  include "thumbyone_led.h"
+#endif
 
 /* --- globals -------------------------------------------------------- */
 
@@ -350,12 +357,69 @@ void I_StartTic(void)    { I_GetEvent(); }
 
 void I_UpdateNoBlit(void){ }
 
+#ifdef THUMBYONE_SLOT_MODE
+/* Front-LED health indicator: smooth green → yellow → red blend as
+ * health drops from 100 to 0.
+ *
+ * Note on die balance: the green LED die on the Thumby Color is
+ * visibly dimmer than the red die at equal PWM duty — (255, 255, 0)
+ * reads almost-pure-red to the eye, not yellow. To get a visually-
+ * yellow midpoint the red channel has to be CAPPED while green stays
+ * at max. Empirical yellow is roughly R=96 when G=255. The curve:
+ *   health ∈ [50, 100]  — G = 255, R ramps 0 →  96   (green → yellow)
+ *   health ∈ [0,  50]   — G ramps 255 → 0, R ramps 96 → 255  (yellow → red)
+ *   B always 0.
+ *
+ * Cache last health and only call set_rgb on change — typical DOOM
+ * combat mutates HP in ~5..20 unit steps, so this fires a handful
+ * of MMIO PWM writes per second at most.
+ *
+ * Guarded by playeringame + p->mo so the title screen / demo
+ * playback leaves the LED at the boot idle-green. */
+static void led_update_from_health(void) {
+    if (!playeringame[consoleplayer]) return;
+    player_t *p = &players[consoleplayer];
+    if (!p->mo) return;
+
+    int health = p->health;
+    if (health < 0)   health = 0;
+    if (health > 100) health = 100;
+
+    static int s_last_health = -1;
+    if (health == s_last_health) return;
+    s_last_health = health;
+
+    /* R at the perceived-yellow midpoint. Tune if the blend still
+     * reads too red/green — lower = more green at HP=50, higher =
+     * more red. */
+    const int YELLOW_R = 96;
+
+    uint8_t r, g;
+    if (health >= 50) {
+        /* 50..100: pure green (0, 255, 0) → yellow (96, 255, 0). */
+        r = (uint8_t)(((100 - health) * YELLOW_R) / 50);
+        g = 255;
+    } else {
+        /* 0..50: yellow (96, 255, 0) → pure red (255, 0, 0).
+         * R climbs from YELLOW_R to 255 while G drops from 255 to 0. */
+        r = (uint8_t)(YELLOW_R + ((50 - health) * (255 - YELLOW_R)) / 50);
+        g = (uint8_t)((health * 255) / 50);
+    }
+    thumbyone_led_set_rgb(r, g, 0);
+}
+#endif
+
 void I_FinishUpdate(void)
 {
     if (sem_available(&render_frame_ready)) {
         sem_acquire_blocking(&render_frame_ready);
         present_frame(next_frame_index);
         sem_release(&display_frame_freed);
+#ifdef THUMBYONE_SLOT_MODE
+        /* After each presented frame, mirror player health into the
+         * front LED colour. No-op on title / demo screens. */
+        led_update_from_health();
+#endif
     }
 }
 

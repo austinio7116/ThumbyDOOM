@@ -77,6 +77,29 @@ The bottom of the screen shows your health, armor, ammo, and the
 Doomguy's face (which reacts to damage direction). Key cards appear
 as colored markers when collected.
 
+### Front-LED Health Indicator (ThumbyOne slot only)
+
+When DOOM is running as a ThumbyOne slot (not standalone), the
+device's front RGB LED continuously mirrors your player HP as a
+smooth colour blend so you can see health state in peripheral
+vision without taking eyes off the action:
+
+| HP | LED |
+|---:|---|
+| 100 | Pure green |
+| ~75 | Green tinted with yellow |
+| 50  | Yellow (green-balanced — see below) |
+| ~25 | Orange-red |
+| 0   | Pure red |
+
+The green die on the Thumby Color LED is dimmer than the red die
+at equal PWM duty, so a literal `(R=255, G=255)` yellow mix reads
+almost-pure-red. The blend compensates by capping the red channel
+at ~96/255 when green is full, giving a visually-balanced yellow at
+HP=50. Only fires new PWM writes when HP actually changes (a
+handful of MMIO writes per combat event, not per frame). No effect
+on standalone builds.
+
 ### Overlay Menu
 
 <p align="center">

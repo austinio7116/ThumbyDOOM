@@ -26,10 +26,6 @@
 #include "doom/doomstat.h"
 #include "doom/d_items.h"
 
-#ifdef THUMBYONE_SLOT_MODE
-#  include "thumbyone_led.h"
-#endif
-
 extern uint16_t g_fb[128 * 128];
 
 /* RGB565 color helpers */
@@ -166,28 +162,6 @@ void thumby_hud_draw(void)
 
     int health = p->health;
     int armor  = p->armorpoints;
-
-#ifdef THUMBYONE_SLOT_MODE
-    /* Front-LED health indicator: green > 50, amber 26..50, red <= 25.
-     * Bucket the health into 3 bands and only repaint when the band
-     * changes — that keeps the per-frame cost at one compare +
-     * branch once steady-state is reached. The set_rgb call does
-     * three MMIO PWM writes (< 1 µs on the RP2350) only on band
-     * transitions, which is rare enough to be free. */
-    static int s_last_band = -1;
-    int band;
-    if      (health >  50) band = 0;   /* green */
-    else if (health >  25) band = 1;   /* amber */
-    else                    band = 2;  /* red */
-    if (band != s_last_band) {
-        s_last_band = band;
-        switch (band) {
-            case 0: thumbyone_led_set_rgb(  0, 255,   0); break;
-            case 1: thumbyone_led_set_rgb(255, 180,   0); break;
-            case 2: thumbyone_led_set_rgb(255,   0,   0); break;
-        }
-    }
-#endif
     int ammo_max = 0;
     int ammo = weapon_ammo_count(p, &ammo_max);
 
