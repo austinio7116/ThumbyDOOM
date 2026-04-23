@@ -392,11 +392,13 @@ if (THUMBYONE_SLOT_MODE)
         ${THUMBYONE_COMMON_SRC}
         ${THUMBYONE_COMMON_BATTERY_SRC}
         ${THUMBYONE_COMMON_BACKLIGHT_SRC}
+        ${THUMBYONE_COMMON_LED_SRC}
         ${THUMBYONE_COMMON_SETTINGS_SRC})
     target_include_directories(thumbydoom PRIVATE
         ${THUMBYONE_COMMON_INCLUDE}
         ${THUMBYONE_COMMON_BATTERY_INCLUDE}
         ${THUMBYONE_COMMON_BACKLIGHT_INCLUDE}
+        ${THUMBYONE_COMMON_LED_INCLUDE}
         ${THUMBYONE_COMMON_SETTINGS_INCLUDE})
     # DOOM needs hardware_pio for thumbyone_backlight (PIO PWM on
     # GP7) and can safely opt in to the shared settings reader

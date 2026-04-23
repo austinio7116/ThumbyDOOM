@@ -22,6 +22,10 @@
 #include "doom_audio_pwm.h"
 #include "doom_font.h"
 
+#ifdef THUMBYONE_SLOT_MODE
+#include "thumbyone_led.h"
+#endif
+
 /* ATRANS slots 1..3 identity setup now lives in ThumbyOne's
  * common/thumbyone_handoff.c — the handoff source is compiled
  * into every slot in THUMBYONE_SLOT_MODE, which carries a
@@ -292,6 +296,18 @@ int main(void) {
     doom_lcd_init();
     doom_buttons_init();
     doom_audio_pwm_init();
+
+#ifdef THUMBYONE_SLOT_MODE
+    /* Front LED: DOOM had been leaving whatever the lobby painted
+     * (or the undefined PWM state chain_image landed in — hence
+     * the "white flash on load" the user saw). Use the shared slot
+     * helper so the LED honours /.brightness on boot exactly the
+     * same way every other slot does. drive_backlight=true, but
+     * note doom_lcd_init already called thumbyone_backlight_set
+     * via its own path — the second set is harmless (idempotent
+     * with the same value from the mirror). */
+    thumbyone_slot_init_brightness_and_led(true);
+#endif
 
     boot_splash();
 
