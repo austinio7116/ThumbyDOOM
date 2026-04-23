@@ -1,5 +1,9 @@
 # ThumbyDOOM
 
+> 😈 **ThumbyDOOM is now part of [ThumbyOne](https://github.com/austinio7116/ThumbyOne)** — a unified multi-boot firmware that ships ThumbyDOOM, ThumbyNES (NES / SMS / GG / GB), ThumbyP8 (PICO-8), and MicroPython + Tiny Game Engine in a single UF2. Most users should flash ThumbyOne instead of the standalone ThumbyDOOM firmware below.
+>
+> This repo remains the standalone build of ThumbyDOOM and the source of truth for the port itself — the code here is what ThumbyOne's DOOM slot compiles. Use this repo if you specifically want DOOM-only firmware, or to hack on the port.
+
 DOOM on the [Thumby Color](https://thumby.us/) — the world's smallest
 color gaming handheld.
 
