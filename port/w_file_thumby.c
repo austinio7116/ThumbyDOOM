@@ -33,6 +33,12 @@ static const wad_file_t thumby_wad = {
 static wad_file_t *W_Thumby_OpenFile(const char *path)
 {
     const uint8_t *p = doom1_whd_data;
+    /* ThumbyDOOM uses the non-super-tiny WHD format (whd_gen run
+     * with -no-super-tiny, magic 'IWHD'). Vendor's w_file_memory.c
+     * expects the super-tiny format instead (magic 'IWHX'). See
+     * whd_gen/wad.cpp:129 — the magic byte is
+     *     super_tiny ? 'X' : 'D'
+     * and build_wad.sh always passes -no-super-tiny. */
     if (p[0] != 'I' || p[1] != 'W' || p[2] != 'H' || p[3] != 'D') {
         I_Error("WHD blob missing — bad magic");
     }
