@@ -2,14 +2,15 @@
  * ThumbyDOOM — i_input. Polls the GPIO buttons each tic and posts
  * Doom keydown/up events when state changes.
  *
- * Mapping:
- *   D-pad         → arrow keys (movement / menu nav)
- *   A             → Fire (RCTRL)
- *   B             → Use (SPACE)
- *   LB            → Strafe modifier (RSHIFT alt — using comma/period
- *                    for strafe is awkward; we route LB as alt-mod)
- *   RB            → Next weapon (placeholder: '1'..'7')
- *   MENU          → ESC
+ * Three control schemes, selectable from the overlay menu:
+ *
+ *   CLASSIC    dpad turns,    LB/RB strafe, A=fire,  B=use
+ *   SOUTHPAW   dpad strafes,  LB/RB turn,   A=fire,  B=use
+ *   BA STRAFE  dpad turns,    A/B  strafe,  LB=use,  RB=fire
+ *
+ * Use-button long-press toggles the automap. Use held + the two
+ * "trigger" buttons cycles weapons — the trigger buttons are LB/RB
+ * in CLASSIC/SOUTHPAW and B/A in BA STRAFE, mirroring the chord.
  *
  * Note: Doom processes events through D_PostEvent. We synthesize
  * ev_keydown/ev_keyup events with .data1 = ASCII/keycode.
@@ -43,17 +44,7 @@ typedef struct {
     int doom_key_alt;  /* second key sent on press, or 0 */
 } button_map_t;
 
-/* Control map — Thumby Color physical layout → Doom keys.
- *
- *   D-pad LEFT/RIGHT  → strafe (',' / '.')
- *   D-pad UP/DOWN     → forward/back (arrow keys)
- *   LB                → turn left  (LEFTARROW)
- *   RB                → turn right (RIGHTARROW)
- *   A                 → fire (RCTRL)
- *   B                 → use / open doors (SPACE)
- *   MENU              → menu / esc
- *
- * Doom default key bindings (m_controls.c):
+/* Doom default key bindings (m_controls.c):
  *   key_strafeleft  = ','
  *   key_straferight = '.'
  *   key_left        = KEY_LEFTARROW
@@ -68,37 +59,43 @@ typedef struct {
  * and the menu/intermission screens, where Doom expects ENTER for
  * confirm and 'y' for yes-prompts. The "extra" key is harmless in
  * the other context. */
-/* Classic: dpad=turn, LB/RB=strafe.
- * Southpaw: dpad L/R=strafe, LB/RB=turn. */
+/* Classic: dpad=turn, LB/RB=strafe, A=fire, B=use.
+ * Southpaw: dpad L/R=strafe, LB/RB=turn, A=fire, B=use.
+ * BA STRAFE: dpad=turn/walk, A/B=strafe right/left, LB=use, RB=fire. */
 static button_map_t btn_map[] = {
     { BTN_LEFT_GP,  KEY_LEFTARROW,  0 },             /* [0] turn/strafe left */
     { BTN_RIGHT_GP, KEY_RIGHTARROW, 0 },             /* [1] turn/strafe right */
     { BTN_UP_GP,    KEY_UPARROW,    0 },             /* [2] forward */
     { BTN_DOWN_GP,  KEY_DOWNARROW,  0 },             /* [3] back */
-    { BTN_LB_GP,    ',',            0 },             /* [4] strafe/turn left */
-    { BTN_RB_GP,    '.',            0 },             /* [5] strafe/turn right */
-    { BTN_A_GP,     KEY_RCTRL,      KEY_ENTER },     /* [6] fire + confirm */
-    { BTN_B_GP,     ' ',            'y' },           /* [7] use + yes */
+    { BTN_LB_GP,    ',',            0 },             /* [4] strafe/turn left, or use (BA STRAFE) */
+    { BTN_RB_GP,    '.',            0 },             /* [5] strafe/turn right, or fire (BA STRAFE) */
+    { BTN_A_GP,     KEY_RCTRL,      KEY_ENTER },     /* [6] fire + confirm, or strafe-right (BA STRAFE) */
+    { BTN_B_GP,     ' ',            'y' },           /* [7] use + yes, or strafe-left (BA STRAFE) */
     { BTN_MENU_GP,  KEY_ESCAPE,     0 },             /* [8] menu */
 };
 #define NBTN ((int)(sizeof(btn_map)/sizeof(btn_map[0])))
 
 static uint32_t prev_state = 0;     /* bit i = btn_map[i] held */
 
+#define A_IDX           6
 #define B_IDX           7
 #define LB_IDX          4
 #define RB_IDX          5
 #define MENU_IDX        8
-#define LONG_PRESS_MS   400          /* hold B this long → automap */
+#define LONG_PRESS_MS   400          /* hold use this long → automap */
 #define MENU_LONG_MS    500          /* hold MENU this long → overlay menu */
 
 /* Keycodes for prev/next weapon — matched in I_InitInput. */
 #define KEY_WPREV       '['
 #define KEY_WNEXT       ']'
 
-static uint32_t b_press_start;       /* timestamp when B was pressed */
-static int      b_long_fired;        /* already sent TAB this press? */
-static int      b_suppressed;        /* suppress B release after long press */
+/* Long-press / chord state for the "use" button. The use button is
+ * B in CLASSIC/SOUTHPAW and LB in BA STRAFE — long-press toggles
+ * the automap; in non-BA-STRAFE schemes, also drives the use+
+ * trigger chord for weapon switching. */
+static uint32_t use_press_start;     /* timestamp when use was pressed */
+static int      use_long_fired;      /* already sent TAB this press? */
+static int      use_suppressed;      /* suppress use release after long press / chord */
 
 /* MENU press tracking. Short tap → synthesised ESC on release
  * (opens Doom's native menu); long-press → overlay menu trigger
@@ -131,22 +128,42 @@ void I_GetEvent(void)
         binds_set = 1;
     }
 
-    /* Swap dpad/bumper keys when control scheme changes. */
+    /* Swap key bindings when control scheme changes. */
+    int ctrl = overlay_menu_get_controls();
     {
         static int last_ctrl = -1;
-        int ctrl = overlay_menu_get_controls();
         if (ctrl != last_ctrl) {
             if (ctrl == 0) {
+                /* CLASSIC: dpad turns, LB/RB strafe, A=fire, B=use. */
                 btn_map[0].doom_key = KEY_LEFTARROW;
                 btn_map[1].doom_key = KEY_RIGHTARROW;
                 btn_map[4].doom_key = ',';
                 btn_map[5].doom_key = '.';
-            } else {
+                btn_map[6].doom_key = KEY_RCTRL;
+                btn_map[7].doom_key = ' ';
+            } else if (ctrl == 1) {
+                /* SOUTHPAW: dpad strafes, LB/RB turn, A=fire, B=use. */
                 btn_map[0].doom_key = ',';
                 btn_map[1].doom_key = '.';
                 btn_map[4].doom_key = KEY_LEFTARROW;
                 btn_map[5].doom_key = KEY_RIGHTARROW;
+                btn_map[6].doom_key = KEY_RCTRL;
+                btn_map[7].doom_key = ' ';
+            } else {
+                /* BA STRAFE: dpad turns/walks, A/B strafe right/left,
+                 * LB=use, RB=fire. */
+                btn_map[0].doom_key = KEY_LEFTARROW;
+                btn_map[1].doom_key = KEY_RIGHTARROW;
+                btn_map[4].doom_key = ' ';          /* LB = use */
+                btn_map[5].doom_key = KEY_RCTRL;    /* RB = fire */
+                btn_map[6].doom_key = '.';          /* A  = strafe right */
+                btn_map[7].doom_key = ',';          /* B  = strafe left */
             }
+            /* Reset long-press state — stale flags from the previous
+             * scheme would refer to the wrong physical button. */
+            use_press_start = 0;
+            use_long_fired  = 0;
+            use_suppressed  = 0;
             last_ctrl = ctrl;
         }
     }
@@ -224,72 +241,82 @@ void I_GetEvent(void)
         prev_state = 0;
     }
 
-    /* B + LB = prev weapon, B + RB = next weapon.
-     * B long-press (no trigger) = automap toggle.
-     * Short B = use (SPACE) as normal. */
-    uint32_t b_mask  = 1u << B_IDX;
-    uint32_t lb_mask = 1u << LB_IDX;
-    uint32_t rb_mask = 1u << RB_IDX;
-    static int weapon_chord;  /* 1 if B+trigger consumed this press */
+    /* "Use" button chord + long-press. Mapping per scheme:
+     *   CLASSIC / SOUTHPAW: use=B, prev=LB, next=RB
+     *   BA STRAFE:          use=LB, prev=B,  next=A
+     * Use held + prev/next tap → cycle weapon.
+     * Use long-press (no chord) → automap toggle.
+     * Short use tap → fires the use key (SPACE) as normal. */
+    int use_idx        = (ctrl == 2) ? LB_IDX : B_IDX;
+    int chord_prev_idx = (ctrl == 2) ? B_IDX  : LB_IDX;
+    int chord_next_idx = (ctrl == 2) ? A_IDX  : RB_IDX;
+    uint32_t use_mask  = 1u << use_idx;
+    uint32_t cprev_mask = 1u << chord_prev_idx;
+    uint32_t cnext_mask = 1u << chord_next_idx;
+    static int weapon_chord;  /* 1 if use+trigger consumed this press */
 
-    if ((cur & b_mask) && !(prev_state & b_mask)) {
-        /* B just pressed — start timing. */
-        b_press_start = now_ms();
-        b_long_fired = 0;
-        b_suppressed = 0;
+    if ((cur & use_mask) && !(prev_state & use_mask)) {
+        /* Use just pressed — start timing. */
+        use_press_start = now_ms();
+        use_long_fired = 0;
+        use_suppressed = 0;
         weapon_chord = 0;
     }
 
-    /* B held + trigger pressed → weapon switch. */
-    if ((cur & b_mask) && !b_long_fired) {
-        if ((cur & lb_mask) && !(prev_state & lb_mask) && !weapon_chord) {
+    /* Use held + trigger pressed → weapon switch. */
+    if ((cur & use_mask) && !use_long_fired) {
+        if ((cur & cprev_mask) && !(prev_state & cprev_mask) && !weapon_chord) {
             event_t ev = { ev_keydown, KEY_WPREV, -1, -1 };
             D_PostEvent(&ev);
             ev.type = ev_keyup;
             D_PostEvent(&ev);
             weapon_chord = 1;
-            b_suppressed = 1;
+            use_suppressed = 1;
         }
-        if ((cur & rb_mask) && !(prev_state & rb_mask) && !weapon_chord) {
+        if ((cur & cnext_mask) && !(prev_state & cnext_mask) && !weapon_chord) {
             event_t ev = { ev_keydown, KEY_WNEXT, -1, -1 };
             D_PostEvent(&ev);
             ev.type = ev_keyup;
             D_PostEvent(&ev);
             weapon_chord = 1;
-            b_suppressed = 1;
+            use_suppressed = 1;
         }
     }
 
-    /* Long-press B (no chord) → automap toggle. */
-    if ((cur & b_mask) && !b_long_fired && !weapon_chord) {
-        if (now_ms() - b_press_start >= LONG_PRESS_MS) {
+    /* Long-press use (no chord) → automap toggle. Also synthesise
+     * the use-button keyup so Doom doesn't think SPACE is still
+     * held (would lock out the next door interaction). */
+    if ((cur & use_mask) && !use_long_fired && !weapon_chord) {
+        if (now_ms() - use_press_start >= LONG_PRESS_MS) {
             event_t ev = { ev_keydown, KEY_TAB, -1, -1 };
             D_PostEvent(&ev);
             ev.type = ev_keyup;
             D_PostEvent(&ev);
-            b_long_fired = 1;
-            b_suppressed = 1;
-            if (prev_state & b_mask) {
-                event_t up = { ev_keyup, ' ', -1, -1 };
+            use_long_fired = 1;
+            use_suppressed = 1;
+            if (prev_state & use_mask) {
+                event_t up = { ev_keyup, btn_map[use_idx].doom_key, -1, -1 };
                 D_PostEvent(&up);
-                up.data1 = 'y';
-                D_PostEvent(&up);
+                if (btn_map[use_idx].doom_key_alt) {
+                    up.data1 = btn_map[use_idx].doom_key_alt;
+                    D_PostEvent(&up);
+                }
             }
         }
     }
 
-    /* Suppress B and triggers while chord/long-press is active.
-     * MENU is always suppressed from the generic loop — it's
-     * handled entirely by the short/long-press block above so the
-     * keydown on press doesn't race the short-tap ESC we synthesise
-     * on release. */
+    /* Suppress use and chord triggers while chord/long-press is
+     * active. MENU is always suppressed from the generic loop —
+     * it's handled entirely by the short/long-press block above
+     * so the keydown on press doesn't race the short-tap ESC we
+     * synthesise on release. */
     uint32_t suppress = 1u << MENU_IDX;
-    if (b_suppressed) suppress |= b_mask;
-    if (weapon_chord)  suppress |= lb_mask | rb_mask;
+    if (use_suppressed) suppress |= use_mask;
+    if (weapon_chord)   suppress |= cprev_mask | cnext_mask;
     uint32_t changed = (cur ^ prev_state) & ~suppress;
 
-    if (!(cur & b_mask) && b_suppressed) {
-        b_suppressed = 0;
+    if (!(cur & use_mask) && use_suppressed) {
+        use_suppressed = 0;
         weapon_chord = 0;
     }
 

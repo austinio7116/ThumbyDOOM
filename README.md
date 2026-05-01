@@ -42,6 +42,11 @@ and re-upload your games.
 
 ### Controls
 
+Three control schemes, switchable from the overlay menu (Controls →
+CLASSIC / SOUTHPAW / BA STRAFE). The default is CLASSIC.
+
+#### CLASSIC *(default)*
+
 | Button | Action |
 |--------|--------|
 | D-pad L/R | Turn left / right |
@@ -53,23 +58,48 @@ and re-upload your games.
 | B (hold 0.4s) | Toggle automap |
 | B + LB | Previous weapon |
 | B + RB | Next weapon |
-| MENU | Open Doom menu |
-| LB + RB (hold 3s) | Open overlay menu |
+| MENU (tap) | Open Doom menu |
+| MENU (hold 0.5s) | Open overlay menu |
 
-### Tips
+#### SOUTHPAW
 
-- **Opening doors**: Walk up to a door and tap **B**
-- **Switching weapons**: Hold **B** then tap **LB** (prev) or **RB** (next)
-  to cycle through your arsenal. You get new weapons by picking them up.
-- **Automap**: Hold **B** for half a second to toggle the map overlay.
-  Use the d-pad to look around. Hold **B** again to close it.
-- **Saving your game**: Press **MENU** to open the pause menu, select
+D-pad and bumpers swap roles — d-pad **L/R strafes**, **LB/RB turn**.
+A/B and the use/long-press/chord behaviour are identical to CLASSIC.
+
+#### BA STRAFE
+
+Modern-FPS-style mapping where the shoulder buttons fire and use,
+and the face buttons strafe.
+
+| Button | Action |
+|--------|--------|
+| D-pad L/R | Turn left / right |
+| D-pad U/D | Move forward / back |
+| B | Strafe left |
+| A | Strafe right |
+| RB | Fire |
+| LB (tap) | Use / open doors |
+| LB (hold 0.4s) | Toggle automap |
+| LB + B | Previous weapon |
+| LB + A | Next weapon |
+| MENU (tap) | Open Doom menu |
+| MENU (hold 0.5s) | Open overlay menu |
+
+### Tips *(buttons named for the CLASSIC scheme)*
+
+- **Opening doors**: Walk up to a door and tap **B** (LB on BA STRAFE)
+- **Switching weapons**: Hold the **use** button and tap a trigger to
+  cycle weapons — *use+LB* / *use+RB* on CLASSIC and SOUTHPAW, or
+  *use+B* / *use+A* on BA STRAFE.
+- **Automap**: Hold the **use** button for half a second to toggle the
+  map overlay. Use the d-pad to look around. Hold again to close.
+- **Saving your game**: Tap **MENU** to open Doom's pause menu, select
   "Save Game", then pick a slot. The game saves instantly to flash.
 - **Loading a save**: From the pause menu, select "Load Game" and pick
   your slot. This also works from the title screen.
 - **Menu navigation**: **A** confirms, **MENU** goes back
 - **Secrets**: Doom is full of hidden rooms. Look for walls that are a
-  slightly different texture — walk up and tap **B** to open them.
+  slightly different texture — walk up and use to open them.
 
 ### Status Bar
 
@@ -106,9 +136,9 @@ on standalone builds.
   <img src="images/overlay-menu.jpg" alt="Overlay menu" width="320">
 </p>
 
-Hold **LB + RB** together for 3 seconds during gameplay to open the
-overlay menu. The game pauses and a settings screen appears over the
-dimmed game view. Navigate with the **d-pad**, adjust values with
+Hold **MENU** for half a second during gameplay to open the overlay
+menu. The game pauses and a settings screen appears over the dimmed
+game view. Navigate with the **d-pad**, adjust values with
 **left/right**, toggle options with **A**, and close with **B** or
 **MENU**.
 
@@ -116,7 +146,7 @@ dimmed game view. Navigate with the **d-pad**, adjust values with
 |--------|------|-------------|
 | Resume | Action | Close menu and unpause |
 | Show FPS | Toggle | Display frame rate counter (top-right) |
-| Controls | Choice | CLASSIC (d-pad turns, bumpers strafe) or SOUTHPAW (d-pad strafes, bumpers turn) |
+| Controls | Choice | CLASSIC (d-pad turns, bumpers strafe), SOUTHPAW (d-pad strafes, bumpers turn), or BA STRAFE (B/A strafe, LB=use, RB=fire) |
 | Volume | Slider 0-20 | Master volume (10 = default, 20 = 2x boost) |
 | Music | Slider 0-20 | Music volume relative to SFX |
 | Gamma | Choice | Brightness correction (OFF, 1-4) |
@@ -291,13 +321,25 @@ loop. Flash writes need core1 paused (it executes code from flash).
 **Problem:** Doom expects a keyboard with number keys (weapon select),
 Tab (automap), and text entry. The Thumby Color has 9 buttons.
 
-**Fix:**
-- D-pad L/R = turn, U/D = forward/back
-- LB/RB = strafe left/right
-- A = fire + menu confirm, B = use + yes
-- Long-press B = automap toggle (KEY_TAB)
-- B + LB = previous weapon, B + RB = next weapon
-- MENU = ESC
+**Fix:** Three switchable control schemes — the swap remaps the
+button → keycode table when the overlay menu changes the Controls
+choice.
+
+- CLASSIC: dpad L/R = turn, LB/RB = strafe, A = fire, B = use
+- SOUTHPAW: dpad L/R = strafe, LB/RB = turn, A = fire, B = use
+- BA STRAFE: dpad L/R = turn, A/B = strafe right/left, LB = use,
+  RB = fire
+
+Common to all three:
+- D-pad U/D = forward/back
+- A's secondary keycode = ENTER (menu confirm)
+- B's secondary keycode = 'y' (yes-prompts)
+- Long-press the **use** button = automap toggle (KEY_TAB);
+  use button is B in CLASSIC/SOUTHPAW, LB in BA STRAFE
+- Use **+** chord trigger = previous/next weapon; chord triggers
+  are LB/RB in CLASSIC/SOUTHPAW, B/A in BA STRAFE (mirroring the
+  use-button swap)
+- MENU tap = ESC, MENU long-press = overlay menu
 - `key_prevweapon` / `key_nextweapon` bound at runtime since
   `I_InitInput` is never called by the engine
 

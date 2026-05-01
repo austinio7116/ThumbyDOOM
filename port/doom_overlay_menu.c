@@ -188,7 +188,7 @@ static void load_settings(void) {
         const settings_t *s = (const settings_t *)slots[7].data;
         if (s->magic == SETTINGS_MAGIC) {
             val_show_fps = s->show_fps;
-            val_controls = s->controls;
+            val_controls = s->controls <= 2 ? s->controls : 0;
             val_volume   = s->volume <= 20 ? s->volume : 8;
             val_music    = s->music  <= 20 ? s->music  : 8;
             val_gamma    = s->gamma  <=  4 ? s->gamma  : 0;
@@ -240,7 +240,7 @@ static int val_noclip;
 static int val_warp_ep = 0;   /* 0-based index into ep_choices */
 static int val_warp_map = 0;  /* 0-based index into map_choices */
 
-static const char *ctrl_choices[] = { "CLASSIC", "SOUTHPAW" };
+static const char *ctrl_choices[] = { "CLASSIC", "SOUTHPAW", "BA STRAFE" };
 static const char *gamma_choices[] = { "OFF", "1", "2", "3", "4" };
 static const char *ep_choices[] = { "1", "2", "3", "4" };
 static const char *map_choices[] = { "1","2","3","4","5","6","7","8","9" };
@@ -251,7 +251,7 @@ static menu_item_t items[] = {
     { MI_INFO,      "Battery",      NULL,           0, 0,  NULL, 0, 0 },
     { MI_SEPARATOR, NULL,           NULL,           0, 0,  NULL, 0, 0 },
     { MI_TOGGLE,    "Show FPS",     &val_show_fps,  0, 1,  NULL, 0, 0 },
-    { MI_CHOICE,    "Controls",     &val_controls,  0, 1,  ctrl_choices, 2, 0 },
+    { MI_CHOICE,    "Controls",     &val_controls,  0, 2,  ctrl_choices, 3, 0 },
     { MI_SLIDER,    "Volume",       &val_volume,    0, 20, NULL, 0, 0 },
     { MI_SLIDER,    "Music",        &val_music,     0, 20, NULL, 0, 0 },
     { MI_CHOICE,    "Gamma",        &val_gamma,     0, 4,  gamma_choices, 5, 0 },
@@ -395,7 +395,7 @@ void overlay_menu_open_now(void)
         extern void D_PostEvent(event_t *ev);
         static const int release_keys[] = {
             ',', '.', KEY_LEFTARROW, KEY_RIGHTARROW,
-            KEY_UPARROW, KEY_DOWNARROW, KEY_RCTRL
+            KEY_UPARROW, KEY_DOWNARROW, KEY_RCTRL, ' '
         };
         for (int i = 0; i < (int)(sizeof(release_keys)/sizeof(release_keys[0])); i++) {
             event_t ev = { ev_keyup, release_keys[i], -1, -1 };
